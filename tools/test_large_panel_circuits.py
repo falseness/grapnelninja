@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from functools import partial
@@ -37,6 +38,13 @@ COMPARED = ('broad', 'large', 'huge', 'strip', 'thin', 'sloped')
 SMALL, BIG = ('thin', 'very-thin', 'broad', 'sloped', 'irregular'), ('large', 'huge', 'strip')
 CONTROLS = ('solid', 'mover', 'hazard', 'drag')
 Y0 = -6000
+# captureClimbState() fields added after the baseline: 3548ec4 (TASK-718) grapnelMode/usedDouble,
+# 1b1be79 (TASK-720) fallHintShown, 91f7555 (TASK-721) doubleOfferShown, 9601947 (TASK-790)
+# climbCheckpoint; climbStats dcf3d8a (TASK-729) falls/grapples, 9633c8b (TASK-791) goBacks
+ADDED_CLIMB_FIELDS = ('grapnelMode', 'usedDouble', 'fallHintShown', 'doubleOfferShown', 'climbCheckpoint')
+ADDED_CLIMB_STATS = ('falls', 'grapples', 'goBacks')
+ADDED_CLIMB_DEFAULTS = dict(grapnelMode='single', usedDouble=False, fallHintShown=False, doubleOfferShown=False,
+                            climbCheckpoint=None, stats=dict(falls=0, grapples=0, goBacks=0))
 
 # Test-only level (the game level is not touched: floors is replaced in this
 # page only). The camera, clock and movers are fixed, then one production
@@ -180,6 +188,11 @@ BOARDS = '''(ids) => {
 }'''
 
 
+def log(message):
+    # stderr, like unittest's own output, so a combined log ends with the verdict
+    print(message, file=sys.stderr, flush=True)
+
+
 class LargePanelCircuitTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -242,6 +255,11 @@ class LargePanelCircuitTests(unittest.TestCase):
         # pixels +-2 levels differently between page loads of the same
         # revision. A pixel counts as changed only if it differs from both.
         before_page, before2_page, after_page = self.open(self.baseline_url), self.open(self.baseline_url), self.open(self.url)
+        # 023b45e (TASK-796) dropped the HUD Time row (the last row, never the widest,
+        # so the HUD block and its fade box are unchanged): blank it in the baseline
+        for page in (before_page, before2_page):
+            page.evaluate('''() => { const t = I18N.t
+                I18N.t = function(key, params) { return key === 'climb.time' ? '' : t.call(this, key, params) } }''')
         before, before2, after = self.frame(before_page), self.frame(before2_page), self.frame(after_page)
         layout = self.layout(after_page)
         self.assertEqual(layout, self.layout(before_page))
@@ -262,10 +280,12 @@ class LargePanelCircuitTests(unittest.TestCase):
         # backdrop variant, off by 1-2 levels nearly everywhere; so a pixel counts as
         # changed only if it is more than 2 levels off both loads (raw counts kept too).
         # TASK-701's mote-glow reorder (ed31805) shifts glow halos by up to 5 levels
-        # everywhere, so since then the threshold is 5 (the >2 counts are kept too)
+        # everywhere, so since then the threshold was 5 (the >2 counts are kept too).
+        # TASK-714's float16 bake with fixed-noise dither (bde3bf5) moves single backdrop
+        # pixels around the mote glows by up to 8 levels, so the threshold is now 8
         delta = np.minimum(np.abs(before.astype(int) - after).max(2), np.abs(before2.astype(int) - after).max(2))
         raw = delta > 0
-        diff = delta > 5
+        diff = delta > 8
         strict = delta > 2
         changed_outside = int((diff & ~grown).sum())
         changed_inside = int((diff & bounce).sum())
@@ -281,7 +301,7 @@ class LargePanelCircuitTests(unittest.TestCase):
         checks = dict(viewport=VIEWPORT, dpr=1, clock_ms=4321, baseline=self.baseline_sha,
                       baseline_outline_draw='Trampoline.draw of this tree (TASK-667)',
                       baseline_load_noise=dict(pixels=int((noise > 0).sum()), max_level=int(noise.max())),
-                      changed_rule='more than 5 levels off both baseline loads (TASK-701 glow halos shift <= 5)',
+                      changed_rule='more than 8 levels off both baseline loads (TASK-701 glow halos shift <= 5, TASK-714 dither <= 8)',
                       strict_gt2_changed_outside=int((strict & ~grown).sum()),
                       strict_gt2_border_band_changed=int((strict & ring & ~grown).sum()),
                       raw_changed_pixels_outside_bounce_polygons_grown_1px=int((raw & ~grown).sum()),
@@ -318,7 +338,7 @@ class LargePanelCircuitTests(unittest.TestCase):
             sheet.paste(a, (10, y + 14))
             y += a.height + 34
         sheet.save(self.out / 'before-after.png')
-        print(f'PASS before/after: {changed_inside} px changed inside bounce polygons, 0 outside, '
+        log(f'PASS before/after: {changed_inside} px changed inside bounce polygons, 0 outside, '
               f'0 in border band, controls unchanged')
 
     def test_02_density_scale_and_clipping(self):
@@ -387,7 +407,7 @@ class LargePanelCircuitTests(unittest.TestCase):
             allVerticesInside=new[k]['allVerticesInside'], allPadCornersInside=new[k]['allPadCornersInside'],
             viaRingsFit=new[k]['viaRingsFit'], minVertexEdgeGapPx=new[k]['minVertexEdgeGapPx'], sharpTurns=new[k]['sharpTurns'], minPathGapPx=new[k]['minPathGapPx'],
             minSelfGapPx=new[k]['minSelfGapPx'], pathGapPx=new[k]['pathGapPx']) for k in SHAPES}))
-        print('PASS density: ' + ', '.join(f'{k} traces {old[k]["traces"]}->{new[k]["traces"]} '
+        log('PASS density: ' + ', '.join(f'{k} traces {old[k]["traces"]}->{new[k]["traces"]} '
                                             f'length x{rows[k]["traceLengthRatio"]}' for k in SHAPES) + '; motif sizes unchanged; '
               f'traces/area vs broad: large x{scaling["ratioToBroad"]["large"]}, huge x{scaling["ratioToBroad"]["huge"]} (no plateau)')
 
@@ -473,7 +493,7 @@ class LargePanelCircuitTests(unittest.TestCase):
         self.assertEqual(cache['hugeSpriteBuild']['runs'], 5)
         self.assertGreater(cache['hugeSpriteBuild']['medianMs'], 0)
         self.assertGreater(cache['hugeSpriteBuild']['traces'], 18)
-        print(f'PASS cache: 0 board builds over 30 frames; scale 3->2 rebuilt {cache["scaleChangeBuilds"]}, '
+        log(f'PASS cache: 0 board builds over 30 frames; scale 3->2 rebuilt {cache["scaleChangeBuilds"]}, '
               f'back to 3 reused cached; huge sprite build median {cache["hugeSpriteBuild"]["medianMs"]} ms; two pages identical (boards/material; frame channels differing {frameCompare["channelsDiffering"]}, '
               f'max {frameCompare["maxDiff"]})')
 
@@ -573,7 +593,7 @@ class LargePanelCircuitTests(unittest.TestCase):
                      baselineTiming={r['t']: {k: [v['pulse'], v['ageMs'], v['dotRadiusPx']] for k, v in r['panels'].items()}
                                      for r in old['phases']})
         self._merge('render-checks.json', dict(pulse=pulse))
-        print(f'PASS pulse: parts aligned with enlarged traces at phases {phases}; {lit} lit px, 0 off-motif; '
+        log(f'PASS pulse: parts aligned with enlarged traces at phases {phases}; {lit} lit px, 0 off-motif; '
               f'pulseMs {old["pulseMs"]} -> {new["pulseMs"]}, same easing per phase; intensity(t) = baseline(t/2) '
               f'at {times} ms, max error {max_error}')
 
@@ -591,12 +611,21 @@ class LargePanelCircuitTests(unittest.TestCase):
             s0 = page.evaluate(state)
             page.evaluate('() => { for (let i = 0; i < 20; i++) draw() }')
             s1 = page.evaluate(state)
+            unchanged = s0 == s1
+            st = json.loads(s0)
+            if label == 'after':
+                # Climb-state fields added after the baseline by intended commits are
+                # compared to their fresh-run values; the rest is hash-compared as before
+                added = {k: st['climb'].pop(k) for k in ADDED_CLIMB_FIELDS}
+                added['stats'] = {k: st['climb']['stats'].pop(k) for k in ADDED_CLIMB_STATS}
+                result['addedFields'] = added
             roles = page.evaluate('''(ids) => Object.fromEntries(ids.map(id => { const e = T664.byId(id)
                 return [id, {role: e.surfaceRole ?? e.role ?? 'drag', grapplable: e.grapplable ?? false}] }))''', list(SHAPES + CONTROLS))
+            s0 = json.dumps(st, separators=(',', ':'))
             result[label] = dict(levelGeometrySha=hashlib.sha256(g.encode()).hexdigest(),
                                  elements=len(json.loads(g)['elements']),
                                  stateSha=hashlib.sha256(s0.encode()).hexdigest(),
-                                 stateUnchangedBy20Draws=s0 == s1, roles=roles)
+                                 stateUnchangedBy20Draws=unchanged, roles=roles)
         rc = self.out / 'render-checks.json'
         fd = json.loads(rc.read_text()).get('spill') if rc.exists() else None
         iso = dict(baseline=self.baseline_sha, **result,
@@ -612,10 +641,11 @@ class LargePanelCircuitTests(unittest.TestCase):
         self.assertEqual({k: result['after']['roles'][k]['role'] for k in CONTROLS},
                          {'solid': 'solid', 'mover': 'solid', 'hazard': 'hazard', 'drag': 'drag'})
         self.assertTrue(iso['stateEqual'])
+        self.assertEqual(result['addedFields'], ADDED_CLIMB_DEFAULTS)
         self.assertTrue(result['before']['stateUnchangedBy20Draws'] and result['after']['stateUnchangedBy20Draws'])
         self.assertGreater(result['after']['elements'], 0)
         self.assertEqual(iso['pageErrors'], [])
-        print(f'PASS isolation: level geometry {result["after"]["levelGeometrySha"][:12]} '
+        log(f'PASS isolation: level geometry {result["after"]["levelGeometrySha"][:12]} '
               f'({result["after"]["elements"]} elements) and state equal before/after; draws change no state')
 
     def _merge(self, name, value):
