@@ -262,7 +262,12 @@ class RouteArrowTests(unittest.TestCase):
         for g, r in zip(self.arrows, self.rows):
             _, _, d, head = parse_arrow(g)
             geo = self.geo[g.get('data-transfer')]
-            rep = head_report(d, head, conv.bezier_tangent([self.T(p) for p in conv.curve(r, self.frags)], geo['t']))
+            # alignmentCos is a cosine only against a UNIT tangent: the raw canvas derivative of the
+            # 10-unit-gap Sky Spire Y8 slab transfer T256 (f720868 TASK-774) is 0.755 px per unit t.
+            dx, dy = conv.bezier_tangent([self.T(p) for p in conv.curve(r, self.frags)], geo['t'])
+            n = math.hypot(dx, dy)
+            self.assertGreater(n, 0, g.get('data-transfer'))
+            rep = head_report(d, head, (dx / n, dy / n))
             self.assertTrue(rep['tipEqualsShaftEnd'])
             self.assertGreater(rep['alignmentCos'], 1 - 1e-6, g.get('data-transfer'))
             self.assertAlmostEqual(rep['headLength'], conv.ARROW_HEAD, delta=2e-3)
