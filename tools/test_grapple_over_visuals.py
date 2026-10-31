@@ -160,6 +160,30 @@ class Task453Tests(unittest.TestCase):
 
 
 BASELINE_538 = '530d25b'
+# The *_classic_bad_pixels_unchanged tests compare against the last intended
+# classic/bad pixel change, not the Grapple Over ticket baselines. Classic
+# seed-1 tick-0 hops after 1e2ad62 (TASK-807 bisect): c2a6743 TASK-688 (+-1
+# rounding), ed31805 TASK-701 (mote-glow sum order, <=3/255, accepted there),
+# bde3bf5 TASK-714 (gradient dither removed, <=4/255, accepted there) and
+# b151296 TASK-755 (classic/bad score and record drawn from per-glyph sprites).
+CLASSIC_BAD_BASELINE = 'b151296'
+
+
+def serve_rev(rev, add_cleanup):
+    """URL and full sha of a `git archive` copy of rev served on a local port."""
+    from functools import partial
+    from http.server import ThreadingHTTPServer
+    from threading import Thread
+    from browser_test_support import QuietHandler
+    from perf_mobile import export_rev
+    root, sha = export_rev(rev, add_cleanup)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(root)))
+    add_cleanup(server.server_close)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    add_cleanup(thread.join)
+    add_cleanup(server.shutdown)
+    return f'http://127.0.0.1:{server.server_port}/', sha
 BANDS_538 = 8
 BAND_538 = 1620
 HALF_SPAN_538 = 400
@@ -218,7 +242,7 @@ class Task538Tests(unittest.TestCase):
         context = self.browser.new_context(viewport=viewport, device_scale_factor=1)
         self.addCleanup(context.close)
         self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(
-            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree',
+            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree' if url == self.url else CLASSIC_BAD_BASELINE,
             viewport=viewport, dpr=1, mode=mode, query=query), sort_keys=True))
         page = context.new_page()
         errors = []
@@ -356,11 +380,12 @@ class Task538Tests(unittest.TestCase):
               '8 distinct centre palettes; window bars repainted with each palette; fast backdrop draws the palette into BACKDROP.ctx')
 
     def test_04_classic_bad_pixels_unchanged(self):
+        classic_url, classic_sha = serve_rev(CLASSIC_BAD_BASELINE, self.addCleanup)
         rows = []
         for mode in ('classic', 'bad'):
             for ticks in (0, 90):
                 frames = {}
-                for label, url in (('before', self.baseline_url), ('after', self.url)):
+                for label, url in (('before', classic_url), ('after', self.url)):
                     page = self.open(url, VIEWPORTS_538[0], mode)
                     # Title-screen frames use a varying share of the seeded
                     # stream: re-seed right before the measured run
@@ -373,10 +398,10 @@ class Task538Tests(unittest.TestCase):
                 row = dict(mode=mode, seed=1, reseeded_before_start=True, ticks=ticks, **frames, equal=frames['before'] == frames['after'])
                 rows.append(row)
                 self.assertEqual(frames['before'], frames['after'], row)
-        self.evidence.write('classic-bad.json', dict(baseline_revision=self.config['baseline_revision'],
+        self.evidence.write('classic-bad.json', dict(baseline_revision=classic_sha,
             viewport=VIEWPORTS_538[0], dpr=1, clock='performance.now frozen at 4321 before startGame; particle system emptied before startGame',
             frames=rows, all_equal=all(r['equal'] for r in rows)))
-        print(f'PASS classic/bad: {len(rows)} frame pixel hashes equal to the {BASELINE_538} frames (seed 1, ticks 0/90)')
+        print(f'PASS classic/bad: {len(rows)} frame pixel hashes equal to the {CLASSIC_BAD_BASELINE} frames (seed 1, ticks 0/90)')
 
     def test_05_render_cost_ab(self):
         # Relative A/B of the background layer (render/perfprofile.js) in
@@ -475,7 +500,7 @@ class Task539Tests(unittest.TestCase):
         context = self.browser.new_context(viewport=viewport, device_scale_factor=dpr)
         self.addCleanup(context.close)
         self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(
-            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree',
+            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree' if url == self.url else CLASSIC_BAD_BASELINE,
             viewport=viewport, dpr=dpr, mode=mode, query=query), sort_keys=True))
         page = context.new_page()
         errors = []
@@ -690,6 +715,7 @@ class Task539Tests(unittest.TestCase):
               f'shadowBlur drawImage calls in 120 warm frames')
 
     def test_04_classic_bad_pixels_unchanged(self):
+        classic_url, classic_sha = serve_rev(CLASSIC_BAD_BASELINE, self.addCleanup)
         # Each frame is captured on 3 fresh pages per revision: the baseline
         # itself occasionally yields a second 'bad' tick-0 hash (title-screen
         # timing, seen in TASK-538 too), so every worktree hash must be one
@@ -699,7 +725,7 @@ class Task539Tests(unittest.TestCase):
         for mode in ('classic', 'bad'):
             for ticks in (0, 90):
                 frames = {}
-                for label, url in (('before', self.baseline_url), ('after', self.url)):
+                for label, url in (('before', classic_url), ('after', self.url)):
                     captures = []
                     for _ in range(3):
                         page = self.open(url, VIEWPORTS_538[0], mode=mode)
@@ -716,12 +742,12 @@ class Task539Tests(unittest.TestCase):
                            equal=common['before'] == common['after'] and set(frames['after']) <= set(frames['before']))
                 rows.append(row)
                 self.assertTrue(row['equal'], row)
-        self.evidence.write('classic-bad.json', dict(baseline_revision=self.config['baseline_revision'],
+        self.evidence.write('classic-bad.json', dict(baseline_revision=classic_sha,
             viewport=VIEWPORTS_538[0], dpr=1, captures_per_revision=3,
             clock='performance.now frozen at 4321 before startGame; particle system emptied; Math.random re-seeded',
             frames=rows, all_equal=all(r['equal'] for r in rows)))
         print(f'PASS classic/bad: {len(rows)} frames x 3 captures per revision; every worktree pixel hash is a '
-              f'{BASELINE_539} hash and the most frequent hashes are equal (seed 1, ticks 0/90)')
+              f'{CLASSIC_BAD_BASELINE} hash and the most frequent hashes are equal (seed 1, ticks 0/90)')
 
     def test_05_render_cost_ab(self):
         # Matched A/B in the same browser: the same seed and the same scripted
@@ -898,7 +924,7 @@ class Task540Tests(unittest.TestCase):
         context = self.browser.new_context(viewport=viewport, device_scale_factor=1)
         self.addCleanup(context.close)
         self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(
-            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree',
+            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree' if url == self.url else CLASSIC_BAD_BASELINE,
             viewport=viewport, dpr=1, mode=mode, query=query), sort_keys=True))
         page = context.new_page()
         errors = []
@@ -1162,12 +1188,13 @@ class Task540Tests(unittest.TestCase):
               f'and 0 shadowBlur draws in 20 warm frames')
 
     def test_05_classic_bad_pixels_unchanged(self):
+        classic_url, classic_sha = serve_rev(CLASSIC_BAD_BASELINE, self.addCleanup)
         from collections import Counter
         rows = []
         for mode in ('classic', 'bad'):
             for ticks in (0, 90):
                 frames = {}
-                for label, url in (('before', self.baseline_url), ('after', self.url)):
+                for label, url in (('before', classic_url), ('after', self.url)):
                     captures = []
                     for _ in range(3):
                         page = self.open(url, VIEWPORTS_538[0], mode=mode)
@@ -1184,12 +1211,12 @@ class Task540Tests(unittest.TestCase):
                            equal=common['before'] == common['after'] and set(frames['after']) <= set(frames['before']))
                 rows.append(row)
                 self.assertTrue(row['equal'], row)
-        self.evidence.write('classic-bad.json', dict(baseline_revision=self.config['baseline_revision'],
+        self.evidence.write('classic-bad.json', dict(baseline_revision=classic_sha,
             viewport=VIEWPORTS_538[0], dpr=1, captures_per_revision=3,
             clock='performance.now frozen at 4321 before startGame; particle system emptied; Math.random re-seeded',
             frames=rows, all_equal=all(r['equal'] for r in rows)))
         print(f'PASS classic/bad: {len(rows)} frames x 3 captures per revision; every worktree pixel hash is a '
-              f'{BASELINE_540} hash and the most frequent hashes are equal (seed 1, ticks 0/90)')
+              f'{CLASSIC_BAD_BASELINE} hash and the most frequent hashes are equal (seed 1, ticks 0/90)')
 
     def test_06_render_cost_ab(self):
         # Matched A/B: before = BASELINE_540 (git archive), after = worktree;
@@ -1379,7 +1406,7 @@ class Task541Tests(unittest.TestCase):
                                            is_mobile=touch, has_touch=touch)
         self.addCleanup(context.close)
         self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(
-            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree',
+            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree' if url == self.url else CLASSIC_BAD_BASELINE,
             viewport=viewport, dpr=1, is_mobile=touch, has_touch=touch, mode=mode, query=query), sort_keys=True))
         page = context.new_page()
         errors = []
@@ -1517,12 +1544,13 @@ class Task541Tests(unittest.TestCase):
               f'{len(result["landmark_sprites"])} cached landmark sprites; 0 builds and 0 shadowBlur draws in 16 warm frames')
 
     def test_04_classic_bad_pixels_unchanged(self):
+        classic_url, classic_sha = serve_rev(CLASSIC_BAD_BASELINE, self.addCleanup)
         from collections import Counter
         rows = []
         for mode in ('classic', 'bad'):
             for ticks in (0, 90):
                 frames = {}
-                for label, url in (('before', self.baseline_url), ('after', self.url)):
+                for label, url in (('before', classic_url), ('after', self.url)):
                     captures = []
                     for _ in range(3):
                         page = self.open(url, VIEWPORTS_541[0]['viewport'], mode=mode)
@@ -1539,12 +1567,12 @@ class Task541Tests(unittest.TestCase):
                            equal=common['before'] == common['after'] and set(frames['after']) <= set(frames['before']))
                 rows.append(row)
                 self.assertTrue(row['equal'], row)
-        self.evidence.write('classic-bad.json', dict(baseline_revision=self.config['baseline_revision'],
+        self.evidence.write('classic-bad.json', dict(baseline_revision=classic_sha,
             viewport=VIEWPORTS_541[0]['viewport'], dpr=1, captures_per_revision=3,
             clock='performance.now frozen at 4321 before startGame; particle system emptied; Math.random re-seeded',
             frames=rows, all_equal=all(r['equal'] for r in rows)))
         print(f'PASS classic/bad: {len(rows)} frames x 3 captures per revision; every worktree pixel hash is a '
-              f'{BASELINE_541} hash and the most frequent hashes are equal (seed 1, ticks 0/90)')
+              f'{CLASSIC_BAD_BASELINE} hash and the most frequent hashes are equal (seed 1, ticks 0/90)')
 
     def test_05_render_cost_ab(self):
         # Matched A/B of the background layer (PERF_PROFILE) at the 8 entry
@@ -2193,12 +2221,14 @@ class Task542Tests(unittest.TestCase):
                     screenshot='fast-backdrop-S01.jpg')
 
     def test_04_classic_bad_pixels_unchanged(self):
+        url, classic_sha = serve_rev(CLASSIC_BAD_BASELINE, self.addCleanup)
+        self.urls = dict(self.urls, classic_bad=url)
         from collections import Counter
         rows = []
         for mode in ('classic', 'bad'):
             for ticks in (0, 90):
                 frames = {}
-                for label in ('before', 'final'):
+                for label in ('classic_bad', 'final'):
                     captures = []
                     for _ in range(5):
                         page = self.open(label, mode=mode)
@@ -2213,15 +2243,15 @@ class Task542Tests(unittest.TestCase):
                 # A rare odd title-screen capture occurs in either revision (TASK-539/541 notes): the
                 # majority pixel hash of each revision is compared, the odd captures are kept
                 majority = {k: Counter(v).most_common(1)[0][1] for k, v in frames.items()}
-                row = dict(mode=mode, seed=1, ticks=ticks, before=frames['before'], after=frames['final'],
+                row = dict(mode=mode, seed=1, ticks=ticks, before=frames['classic_bad'], after=frames['final'],
                            most_common=common, majority_counts=majority,
                            odd_captures={k: [h for h in v if h != common[k]] for k, v in frames.items()},
-                           equal=common['before'] == common['final'] and min(majority.values()) >= 3)
+                           equal=common['classic_bad'] == common['final'] and min(majority.values()) >= 3)
                 rows.append(row)
                 self.assertTrue(row['equal'], row)
-        self.evidence.write('classic-bad.json', dict(baseline_revision=self.revisions['before'], viewport=VIEWPORT_542, dpr=1,
+        self.evidence.write('classic-bad.json', dict(baseline_revision=classic_sha, viewport=VIEWPORT_542, dpr=1,
             captures_per_revision=5, comparison='majority pixel hash per revision equal (each a majority of 5)', frames=rows, all_equal=all(r['equal'] for r in rows)))
-        print(f'PASS classic/bad: {len(rows)} frames x 5 captures per revision; majority pixel hashes equal to {BASELINE_542}', flush=True)
+        print(f'PASS classic/bad: {len(rows)} frames x 5 captures per revision; majority pixel hashes equal to {CLASSIC_BAD_BASELINE}', flush=True)
 
 
 VIEWPORTS_493 = VIEWPORTS_541
