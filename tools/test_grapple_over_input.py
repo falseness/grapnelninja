@@ -36,7 +36,8 @@ class Task450Tests(unittest.TestCase):
         page.goto(self.url)
         wait_for_boot(page)
         page.evaluate('''() => {
-            startGame('grapple_over'); cancelAnimationFrame(game);
+            // Climbs (re)start paused since 97ea9d0 TASK-458; the press must reach play.
+            startGame('grapple_over'); menu.unPause(); cancelAnimationFrame(game);
             TUTORIAL_HINT.press(version); TUTORIAL_HINT.advance(2500);
             window.shots=[];
             const calc=grapnel.calcSpeed.bind(grapnel);
@@ -49,8 +50,14 @@ class Task450Tests(unittest.TestCase):
                 speed:grapnelSpeed,radius:MODE_DEFINITIONS.grapple_over.acquisitionRadius});
             window.aimPoint=()=>{
                 const target={x:ninja.x+180,y:ninja.y-110};
-                const client=canvasCoordsToViewportCoords({x:(target.x+screen.x)*scale[version],
+                // Mouse/touch client coordinates are whole pixels; since the 0.25
+                // camera (c2a6743 TASK-688) a pixel spans several world units, so
+                // shift the camera until the target sits exactly on a whole pixel.
+                const raw=canvasCoordsToViewportCoords({x:(target.x+screen.x)*scale[version],
                     y:(target.y+screen.y)*scale[version]});
+                const client={x:Math.round(raw.x),y:Math.round(raw.y)};
+                const snap=viewportCoordsToCanvasCoords(client);
+                screen.x=snap.x/scale[version]-target.x;screen.y=snap.y/scale[version]-target.y;
                 const canvasPoint=viewportCoordsToCanvasCoords(client);
                 return {target,client,world:{x:canvasPoint.x/scale[version]-screen.x,
                     y:canvasPoint.y/scale[version]-screen.y},camera:[screen.x,screen.y],
@@ -168,16 +175,23 @@ class Task450Tests(unittest.TestCase):
         page.mouse.down()
         page.evaluate("window.dispatchEvent(new Event('blur'))")
         rows['mouse_blur'] = page.evaluate('inputState()')
-        self.assertFalse(rows['mouse_blur']['throwed'])
+        # Since 97ea9d0 TASK-458 a Grapple Over pause keeps the shot (pauseRun no
+        # longer detaches it) and a release under the pause menu is not owned.
+        self.assertEqual(rows['mouse_blur']['shots'],4)
+        self.assertTrue(rows['mouse_blur']['throwed'])
         self.assertTrue(rows['mouse_blur']['paused'])
         page.mouse.up()
-        page.evaluate('menu.unPause()')
+        rows['paused_release'] = page.evaluate('inputState()')
+        self.assertTrue(rows['paused_release']['throwed'])
+        page.evaluate('menu.unPause();grapnel.endShot()')
         # Hit actual rendered HUD / pause button geometry through browser events.
         for button in ('hud','language','resume'):
             page.wait_for_function('!unTouch')
+            # Grapple Over pauses into the climb menu (f016357 TASK-460), whose
+            # first button is resume; menu.resume is only drawn in classic/bad.
             pos = page.evaluate('''name=>{
                 const r=name==='language'?LANGUAGE_BUTTON.rect():
-                    (name==='hud'?menu.button:menu.resume).background;
+                    (name==='hud'?menu.button:CLIMB_UI.buttons[0]).background;
                 const s=name==='hud'?scale[version]:1;
                 return canvasCoordsToViewportCoords({x:(r.x+r.width/2)*s,y:(r.y+r.height/2)*s});
             }''',button)
@@ -207,19 +221,11 @@ class Task450Tests(unittest.TestCase):
 class Task494Tests(unittest.TestCase):
     """TASK-494: genuine browser touch on phones and live viewport changes.
 
-    test_01 plays the nominal route of all 32 isolated encounters with CDP touch events at 844x390: the section
-    tolerance suites' starts (base start for S01, the chained real exit poses for S02..S08) and nominal plans, turned
-    into touchstart/touchend. test_02 samples the hardest encounters at 667x375 and test_03 the touch cancel path;
-    test_04 changes the viewport live and proves the world is the same. Every viewport only moves the camera.
+    test_03 proves the touch cancel path on the legacy v3 S01 hoist; test_04 changes the viewport live and proves the
+    world is the same. Every viewport only moves the camera. test_01/test_02 (touch replays of the legacy v3 S01..S08
+    nominal routes) were retired by TASK-834: see artifacts/TASK-834/retired.md.
     """
     PHONE = dict(width=844, height=390)
-    SMALL = dict(width=667, height=375)
-    # (section, tolerance suite, start chain) as Task549..Task528 run them.
-    SECTIONS = [('S01','Task549Tests',None), ('S02','Task552Tests','s01_v3_exit'), ('S03','Task555Tests','s02_v3_exit'),
-                ('S04','Task516Tests','s03_v3_exit'), ('S05','Task519Tests','s04_v3_exit'), ('S06','Task522Tests','s05_v3_exit'),
-                ('S07','Task525Tests','s06_v3_exit'), ('S08','Task528Tests','s07_v3_exit')]
-    # TASK-493 review: the targets closest to an edge or the HUD on touch.
-    HARDEST = ('S03-03','S05-04','S06-03','S08-01','S08-02')
     WORLD = '''() => JSON.stringify({elements:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole})),
         player:[ninja.x,ninja.y,ninja.radius],gravity:GRAVITY,pull:grappleSpeed,throw:grapnelSpeed,
         range:grappleOverAcquisitionRadius(),mode:MODE_DEFINITIONS.grapple_over})'''
@@ -237,7 +243,7 @@ class Task494Tests(unittest.TestCase):
             dirty_paths=subprocess.check_output(['git','status','--porcelain','--','.',':!artifacts'], cwd=ROOT, text=True).splitlines(),
             browser=cls.browser.version, seed=1, hz=60, source_hashes=cls.hashes)
         cls.evidence.log('CONFIG '+json.dumps(cls.proof, sort_keys=True))
-        cls.drivers, cls.starts, cls.chain_cache = {}, {}, {}
+        cls.drivers = {}
 
     @classmethod
     def driver(cls, suite):
@@ -250,117 +256,6 @@ class Task494Tests(unittest.TestCase):
             cls.drivers[suite] = sub('test_01_tolerance_matrix')
         return cls.drivers[suite]
 
-    def start(self, section, suite, chain):
-        """The labeled start pose of the section (None: S01 base start), computed once by the section suite's chain."""
-        if chain is None: return None
-        if section not in self.starts:
-            # Each suite runs its own chain; the chained exit poses its predecessors computed (class caches v3_*) are shared.
-            chained = self.driver(suite)
-            for k, v in self.chain_cache.items(): setattr(type(chained), k, v)
-            self.starts[section] = getattr(chained, chain)()
-            self.chain_cache.update({k: v for k, v in vars(type(chained)).items() if k.startswith('v3_')})
-            self.evidence.log('START %s from %s: player %s' % (section, chain, json.dumps(
-                {k: self.starts[section]['player'][k] for k in ('x','y','speedX','speedY')})))
-        return self.starts[section]
-
-    def plans(self, section, suite, chain):
-        """(encounter, plan, ticks, bounds, strict) per encounter: the suite's nominal route up to the encounter."""
-        d = self.driver(suite)
-        if section == 'S01':
-            # One base-start run carries all four S01 encounters to the section exit; S01-01..03 judged at their exit boxes.
-            boxes = dict(zip(('S01-01','S01-02','S01-03'), (d.V3.S01_01_EXIT, d.V3.S01_02_EXIT, d.V3.S01_03_EXIT)))
-            strict = {n: (t, boxes[n]) for n, _, _, t in d.V3_ENCOUNTERS if t}
-            return [('S01-01..04', d.variant_plan(0), d.V3_TICKS, d.V3_EXIT, strict)]
-        exits = d.exits()
-        return [(name, d.variant_plan(k), exits[name][0], exits[name][1], None) for k, (name, *_ ) in enumerate(d.V3_ENCOUNTERS)]
-
-    def phone_run(self, section, suite, chain, name, plan, ticks, bounds, strict, viewport):
-        from grapple_over_verify import execute, check_trace
-        import grapple_over_verify as verify
-        d = self.driver(suite)
-        m = d.make_input(plan, ticks, bounds, 'touch', snapshot=self.start(section, suite, chain))
-        m['metadata']['viewport'] = dict(viewport)
-        label = '%s-%dx%d' % (name, viewport['width'], viewport['height'])
-        trace = execute(m, self.browser, self.url, str(self.evidence.path('runs/'+label)))
-        shutil.rmtree(self.evidence.path('runs/'+label))
-        check_trace(m, trace)
-        mech = getattr(verify, 'check_%s_v3_mechanics' % section.lower())
-        names = [name] if section != 'S01' else ['S01-01','S01-02','S01-03','S01-04']
-        for n in names: mech(n, trace)
-        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
-        exits = {}
-        for n in names:
-            if strict and n in strict:
-                t, box = strict[n]
-                p = players[t]
-                self.assertTrue(all(lo <= p[k] <= hi for k, (lo, hi) in box.items()), (label, n, p))
-            else:
-                t, p = ticks, players[-1]
-            exits[n] = dict(tick=t, player=[round(p['x'],2), round(p['y'],2)])
-        inputs = [e for e in trace['events'] if e['type'] == 'input']
-        self.assertTrue(inputs and all(e['trusted'] and e['event'] in ('touchstart','touchend') for e in inputs), label)
-        planned = [i for i in m['inputs']]
-        events, ghost, double, errors = [], 0, 0, []
-        starts = {e['tick'] for e in inputs if e['event'] == 'touchstart'}
-        for e, want in zip(inputs, planned):
-            fired = 'resolvedTarget' in e
-            row = dict(tick=e['tick'], type=e['event'], client=[round(e['client']['x'],2), round(e['client']['y'],2)], throw=fired)
-            if e['event'] == 'touchstart':
-                err = math.hypot(e['world']['x']-want['world']['x'], e['world']['y']-want['world']['y'])
-                row['aim_error'] = round(err, 3)
-                errors.append(err)
-                self.assertTrue(fired, (label, e['tick']))
-                self.assertFalse(e['before']['simulation']['grapple']['throwed'], (label, e['tick']))
-                self.assertTrue(e['after']['simulation']['grapple']['throwed'], (label, e['tick']))
-                self.assertEqual(e['resolvedTarget'], e['world'])
-            elif fired:
-                ghost += 1
-            events.append(row)
-        # A throw that starts between snapshots without a touchstart on the previous tick is a ghost throw;
-        # two onsets for one touch a double throw.
-        thrown = [r['state']['simulation']['grapple']['throwed'] for r in trace['snapshots']]
-        onsets = [t for t in range(1, len(thrown)) if thrown[t] and not thrown[t-1]]
-        ghost += sum(1 for t in onsets if t-1 not in starts)
-        double = len(onsets) - len({t-1 for t in onsets} & starts) - sum(1 for t in onsets if t-1 not in starts)
-        self.assertEqual((ghost, double), (0, 0), label)
-        self.assertEqual(len(onsets), len(starts), label)
-        tolerance = 1.000001 * 1080 / viewport['height'] / 0.25
-        self.assertLessEqual(max(errors), tolerance, label)
-        acquired = [e['after']['rope'][0]['id'] for e in trace['events'] if e['type'] == 'acquisition']
-        return dict(run=label, section=section, encounters=names, viewport=viewport, ticks=ticks, expected_exit=bounds,
-            success=True, exits=exits, kind=m['metadata']['kind'], touch_events=events, touchstart=len(starts),
-            touchend=sum(1 for e in inputs if e['event'] == 'touchend'), mouse_events=0, throws=len(onsets),
-            ghost_throws=ghost, double_throws=double, max_aim_error=round(max(errors), 3), aim_tolerance=round(tolerance, 3),
-            acquisitions=acquired, trace_sha256=hashlib.sha256(json.dumps(trace, sort_keys=True).encode()).hexdigest())
-
-    def test_01_phone_all_encounters(self):
-        runs, covered = [], []
-        for section, suite, chain in self.SECTIONS:
-            for name, plan, ticks, bounds, strict in self.plans(section, suite, chain):
-                row = self.phone_run(section, suite, chain, name, plan, ticks, bounds, strict, self.PHONE)
-                runs.append(row); covered += row['encounters']
-                print('PHONE', row['run'], 'exit', row['exits'], 'touchstart', row['touchstart'], 'throws', row['throws'],
-                      'max aim error', row['max_aim_error'], flush=True)
-        self.assertEqual(len(covered), 32)
-        self.assertEqual(len(set(covered)), 32)
-        type(self).phone_runs = runs
-        self.write_touch()
-        print('PASS phone 844x390: 32/32 encounters exit with real touchstart/touchend, 0 ghost/double throws, max aim error %.3f'
-              % max(r['max_aim_error'] for r in runs), flush=True)
-
-    def test_02_hardest_small_phone(self):
-        runs = []
-        for section, suite, chain in self.SECTIONS:
-            for name, plan, ticks, bounds, strict in self.plans(section, suite, chain):
-                if name not in self.HARDEST: continue
-                row = self.phone_run(section, suite, chain, name, plan, ticks, bounds, strict, self.SMALL)
-                runs.append(row)
-                print('SMALL', row['run'], 'exit', row['exits'], 'throws', row['throws'], 'max aim error', row['max_aim_error'], flush=True)
-        self.assertEqual([r['encounters'][0] for r in runs], list(self.HARDEST))
-        type(self).small_runs = runs
-        self.write_touch()
-        print('PASS small phone 667x375: %d hardest encounters exit, 0 ghost/double throws' % len(runs), flush=True)
-
     def test_03_touch_cancel(self):
         """touchcancel while grappled detaches without a throw; the next touchstart throws exactly once."""
         context = self.browser.new_context(viewport=self.PHONE, device_scale_factor=2, has_touch=True)
@@ -369,7 +264,8 @@ class Task494Tests(unittest.TestCase):
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.add_init_script(SEED_SCRIPT % 1)
-        page.goto(self.url); wait_for_boot(page)
+        # The hoist is a legacy v3 S01 point: the normal start loads the imported level since ba5ca11 TASK-650.
+        page.goto(self.url + '?grappleFixture=legacy-v3'); wait_for_boot(page)
         page.evaluate('''() => {cancelAnimationFrame(game); window.requestAnimationFrame=()=>0; startGame('grapple_over'); CLIMB_UI.restart();
             window.domEvents=[]; window.shots=0;
             for (const t of ['touchstart','touchend','touchcancel','mousedown','mouseup','click'])
@@ -415,16 +311,8 @@ class Task494Tests(unittest.TestCase):
         print('PASS touchcancel: grappled hoist detached by touchcancel with no throw; DOM events', [e['type'] for e in dom], flush=True)
 
     def write_touch(self):
-        phone = getattr(type(self), 'phone_runs', [])
-        small = getattr(type(self), 'small_runs', [])
-        everything = phone + small
-        self.evidence.write('touch.json', dict(self.proof, phone_viewport=self.PHONE, small_viewport=self.SMALL,
-            encounters_with_phone_proof=sorted({n for r in phone for n in r['encounters']}),
-            phone_runs=phone, small_phone_runs=small, touchcancel=getattr(type(self), 'cancel', None),
-            totals=dict(runs=len(everything), touchstart=sum(r['touchstart'] for r in everything),
-                touchend=sum(r['touchend'] for r in everything), throws=sum(r['throws'] for r in everything),
-                ghost_throws=sum(r['ghost_throws'] for r in everything), double_throws=sum(r['double_throws'] for r in everything),
-                max_aim_error=max((r['max_aim_error'] for r in everything), default=None))))
+        self.evidence.write('touch.json', dict(self.proof, phone_viewport=self.PHONE,
+            touchcancel=getattr(type(self), 'cancel', None)))
 
     def snapshot_view(self, page, cdp, name):
         """World hash, HUD/control boxes and range ring of the current frame, plus a screenshot."""
@@ -473,8 +361,12 @@ class Task494Tests(unittest.TestCase):
         page.evaluate("cancelAnimationFrame(game); window.requestAnimationFrame=()=>0; startGame('grapple_over'); CLIMB_UI.restart();"
                       " window.shots=0; const aim=grapnel.setAim.bind(grapnel); grapnel.setAim=t=>{shots++; return aim(t)}; 0")
         page.wait_for_function('!unTouch')
-        # A mid-climb pose (the real S05 start) so the range ring and HUD are judged over the mountain, not the base.
-        page.evaluate('s=>restoreClimbState(s)', self.start('S05', 'Task519Tests', 's04_v3_exit'))
+        # A mid-climb pose so the range ring and HUD are judged over the mountain, not the base: standing on
+        # platform P41 of the shipped imported level (ba5ca11 TASK-650). The old pose (the legacy v3 S05 start
+        # chained from the S01..S04 replays) is gone with that level.
+        page.evaluate('''() => {const e=floors[0].byId.get('P41-body0'), b=getElementBounds(e);
+            ninja.x=(b.left+b.right)/2; ninja.y=b.top-ninja.radius-1; ninja.speedX=ninja.speedY=0;
+            screen.trackGrappleOver(true); draw()}''')
         return page, context.new_cdp_session(page)
 
     def test_04_viewports_resize_portrait(self):
@@ -512,7 +404,8 @@ class Task494Tests(unittest.TestCase):
             self.assertTrue(row['touchFirst']); self.assertFalse(row['paused'])
             check(row, world, True)
         def tap(name):
-            p = page.evaluate('''name => {const r=name==='resume'?menu.resume.background:menu.button.background, s=name==='resume'?1:scale[version];
+            # Grapple Over's pause menu is the climb menu (f016357 TASK-460); its first button resumes.
+            p = page.evaluate('''name => {const r=name==='resume'?CLIMB_UI.buttons[0].background:menu.button.background, s=name==='resume'?1:scale[version];
                 return canvasCoordsToViewportCoords({x:(r.x+r.width/2)*s,y:(r.y+r.height/2)*s})}''', name)
             cdp.send('Input.dispatchTouchEvent', {'type':'touchStart','touchPoints':[dict(x=p['x'], y=p['y'], id=1)]})
             cdp.send('Input.dispatchTouchEvent', {'type':'touchEnd','touchPoints':[]})
