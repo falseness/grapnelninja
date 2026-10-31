@@ -96,9 +96,11 @@ class ShortcutReplayTests(unittest.TestCase):
     def test_second_easy_opening_transfer(self):
         # The second 80% transfer (P1 -> P2) keeps its panels and position.
         self.assertEqual((panel('P1'),panel('P2')),('P1','P2'))
-        # TASK-680: two pumps from 0.2 of P1 reach P2 on both v15 and the minimum-side
-        # candidate (its rebuilt P2 slab moves the nearest in-range point; four pumps from 0.5 miss it).
-        r=self.run_probe(source='P1',target='P2',fraction=.2,pumps=2,aimOffset=0,targetWhenInRange=True,budget=1800)
+        # TASK-680 used two pumps from 0.2 of P1. TASK-823: bfe3d45 (TASK-711, v18) widened
+        # level.bounds.left from -1100 to -81450, so the camera no longer clamps at the opening
+        # and the screen-space throw from 0.2 misses P2 (P1/P2 geometry is unchanged). Two
+        # pumps with aim 0 from 0.40..0.50 reach P2 on the shipped level; 0.45 is mid-band.
+        r=self.run_probe(source='P1',target='P2',fraction=.45,pumps=2,aimOffset=0,targetWhenInRange=True,budget=1800)
         self.assertIsNotNone(r['arrival'])
         self.assertEqual(r['hit']['id'],'P2-body0')
 
