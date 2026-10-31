@@ -41,7 +41,7 @@ import test_climb_fall_recovery as recovery  # noqa: E402
 
 EVIDENCE = os.environ.get('ANALYTICS_DESIGN_EVIDENCE_DIR')
 OUT = []
-STATS_KEYS = ['elapsedActiveMs', 'currentHeight', 'maxHeight', 'completed', 'falls', 'grapples']
+STATS_KEYS = ['elapsedActiveMs', 'currentHeight', 'maxHeight', 'completed', 'falls', 'grapples', 'goBacks']
 
 # Design entries of ANALYTICS.debugLog from index `from`
 DESIGN = '''from => ANALYTICS.debugLog.slice(from).filter(e => e.fn === 'addDesignEvent')
@@ -127,6 +127,7 @@ class DesignTests(unittest.TestCase):
         stats = page.evaluate('floors[0].climbStats')
         self.assertEqual(list(stats), STATS_KEYS)
         self.assertEqual(stats['falls'], 2)
+        self.assertEqual(stats['goBacks'], 0)
         page.evaluate('PROGRESS.flushClimb()')
         saved = page.evaluate('''() => Object.keys(localStorage).filter(k => /climb/i.test(k))
             .map(k => localStorage.getItem(k)).join('')''')
