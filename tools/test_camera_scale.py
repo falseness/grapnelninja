@@ -11,6 +11,15 @@ PREVIOUS_SCALE = 0.375
 # Production scripts: everything index.html loads, excluding tools/ fixtures.
 PRODUCTION_JS = sorted(p for p in ROOT.rglob('*.js')
                        if not {'artifacts', 'screenshots', 'node_modules', 'tools', '.git'} & set(p.relative_to(ROOT).parts))
+ZOOM_IDENTIFIERS = re.compile(r'\b(zoom\w*|setZoom|cameraZoom|autoZoom)\s*[=(:]', re.I)
+# String literals are matched first so a '//' or '/*' inside a string (URLs) is kept.
+JS_STRING_OR_COMMENT = re.compile(r'''("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)'''
+                                  r'|//[^\n]*|/\*.*?\*/', re.S)
+
+
+def strip_js_comments(text):
+    """Drop // line and /* */ block comments, keeping string literals and line numbers."""
+    return JS_STRING_OR_COMMENT.sub(lambda m: m.group(1) if m.group(1) is not None else '\n' * m.group(0).count('\n'), text)
 
 
 def mode_definitions():
@@ -55,13 +64,27 @@ class CameraScaleConfigTests(unittest.TestCase):
             text = path.read_text(errors='replace')
             self.assertIsNone(re.search(r'\bscale\s*(\[[^\]]*\]|\.\w+)\s*[-+*/]?=(?!=)', text), path)
 
+    def test_zoom_regex_self_check(self):
+        # Code still matches after comment stripping; prose in comments does not.
+        comment = (ROOT / 'render/nograpplezones.js').read_text().splitlines()[90]
+        self.assertIn("at the tile's own zoom (drawNoGrappleZones)", comment)
+        self.assertIsNotNone(ZOOM_IDENTIFIERS.search(comment))  # the raw comment was the false positive
+        cases = [('zoom = 2', True), ('    setZoom(3)', True), ('camera.zoom = 2 // zoom', True),
+                 ("const url = 'https://x.test/a'; zoom = 2", True), ('/* note */ setZoom(1)', True),
+                 (comment, False), ('/* block\n zoom (x) */ let a = 1', False),
+                 ("const s = 'zoom (in a string)'", True)]
+        for code, expected in cases:
+            found = ZOOM_IDENTIFIERS.search(strip_js_comments(code)) is not None
+            print('SELFCHECK %s match=%s expected=%s %r' % ('PASS' if found == expected else 'FAIL',
+                                                             found, expected, code), flush=True)
+            self.assertEqual(found, expected, code)
+
     def test_no_zoom_controls_or_automatic_zoom(self):
-        zoom_identifiers = re.compile(r'\b(zoom\w*|setZoom|cameraZoom|autoZoom)\s*[=(:]', re.I)
         checked = 0
         for path in PRODUCTION_JS:
             text = path.read_text(errors='replace')
             checked += 1
-            self.assertIsNone(zoom_identifiers.search(text), path)
+            self.assertIsNone(ZOOM_IDENTIFIERS.search(strip_js_comments(text)), path)
             self.assertNotIn('cameraScale =', text, path)
         self.assertGreater(checked, 20)
         # The only wheel listener suppresses page scrolling; it never touches the scale.
