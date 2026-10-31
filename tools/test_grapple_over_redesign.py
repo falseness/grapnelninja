@@ -65,7 +65,9 @@ class Task557Tests(unittest.TestCase):
         p.on('pageerror',lambda e:errors.append(str(e)))
         self.addCleanup(lambda:self.assertEqual(errors,[]))
         p.add_init_script(SEED_SCRIPT % 1)
-        p.goto(self.url)
+        # TASK-557 measured/captured the v3 mountain (GRAPPLE_OVER_MOUNTAIN); normal
+        # boot plays the imported level since ba5ca11 TASK-650, so load it explicitly.
+        p.goto(self.url+'?grappleFixture=legacy-v3')
         wait_for_boot(p)
         p.evaluate('cancelAnimationFrame(game); window.requestAnimationFrame=()=>0')
         p.evaluate(SEED_SCRIPT % 1)
@@ -76,7 +78,7 @@ class Task557Tests(unittest.TestCase):
     def test_01_runtime_measurements(self):
         p=self.page()
         b=p.evaluate(MEASURE)
-        self.assertEqual(b['cameraScale'],.375)
+        self.assertEqual(b['cameraScale'],.25)  # 0.375 -> 0.25 in c2a6743 TASK-688
         self.assertEqual([b['range']['acquisitionRadius'],b['range']['upgradedAcquisitionRadius']],[1080,1620])
         self.assertGreater(b['player']['diameter'],0)
         self.assertGreater(len(b['elements']),0)
@@ -85,7 +87,7 @@ class Task557Tests(unittest.TestCase):
             self.assertAlmostEqual(m['travel'],m['max']-m['min'])
         b.update(self.config)
         self.write('baseline.json',b)
-        print('PASS runtime range=1080/1620 camera=0.375 elements=%d movers=%d yellow/collider=%d' % (len(b['elements']),len(b['movers']),len(b['yellowColliderIntersections'])))
+        print('PASS runtime range=1080/1620 camera=0.25 elements=%d movers=%d yellow/collider=%d' % (len(b['elements']),len(b['movers']),len(b['yellowColliderIntersections'])))
 
     def test_02_actual_layout_captures(self):
         p=self.page()
@@ -95,7 +97,7 @@ class Task557Tests(unittest.TestCase):
             p.evaluate('''p=>{ninja.x=p.x;ninja.y=p.y;screen.x=width/scale[version]/2-p.x;screen.y=height/scale[version]/2-p.y;draw()}''',pose)
             im=Image.open(io.BytesIO(p.screenshot())).convert('RGB'); im.thumbnail((640,360))
             x,y=(i%2)*640,(i//2)*390
-            sheet.paste(im,(x,y+30)); ImageDraw.Draw(sheet).text((x+10,y+8),pose['id']+' approach fixture, scale .375',fill='white')
+            sheet.paste(im,(x,y+30)); ImageDraw.Draw(sheet).text((x+10,y+8),pose['id']+' approach fixture, scale .25',fill='white')
         sheet.save(self.out/'approaches.jpg',quality=85)
         result=p.evaluate('''() => {
  const b=floors[0].level.bounds,k=scale[version],vw=width/k,vh=height/k,z=.12,top=b.top-1200;
@@ -1449,7 +1451,11 @@ class Task567Tests(unittest.TestCase):
         p.goto(self.url+'?grapplePreview=replacement-v1');wait_for_boot(p)
         p.evaluate('cancelAnimationFrame(game);window.requestAnimationFrame=()=>0')
         p.wait_for_function('!unTouch')
-        self.assertEqual(p.evaluate('({x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY})'),dict(x=2160,y=0,vx=0,vy=0))
+        # A fresh start leaves the spawn with the upward launch (bfd38b0 TASK-704);
+        # these traversals were authored from rest, so assert the launch, then stop it.
+        self.assertEqual(p.evaluate('({x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY+getSpawnLaunchSpeed()})'),dict(x=2160,y=0,vx=0,vy=0))
+        self.assertLess(p.evaluate('ninja.speedY'),0)
+        p.evaluate('ninja.speedY=0')
         p.add_script_tag(path=str(ROOT/'tools/grapple_over_yard.js'))
         return p
 
