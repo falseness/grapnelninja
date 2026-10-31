@@ -38,6 +38,14 @@ SEAM_STEP_PX = 4
 # Edge pixel / darker 1 px neighbour, median along the edge; the fractional
 # edges of the 0d9ed39 clip gave 0.69..0.92, a seamless edge gives >= 0.96
 SEAM_MIN_RATIO = 0.93
+# The pause screen's 'chill version' button: 4f509ed (TASK-459) replaced
+# menu.backToMenu with three mode buttons, and the Grapple Over pause
+# screen (the boot run) draws its own CLIMB_UI.buttons
+CHILL_BUTTON = '''() => {
+    redrawOverlays()
+    const buttons = version === 'grapple_over' ? CLIMB_UI.buttons : menu.modeButtons
+    return buttons.find(b => b.text.text === I18N.t('mode.classic'))
+}'''
 
 
 def viewport_name(viewport):
@@ -45,7 +53,7 @@ def viewport_name(viewport):
 
 
 def boot_menu(browser, url, viewport):
-    """Open the game at viewport and wait for the boot-time 'bad' run."""
+    """Open the game at viewport and wait for the boot-time run (Grapple Over since 4f509ed TASK-459)."""
     width, height, touch = viewport
     options = {'has_touch': True, 'is_mobile': True} if touch else {}
     context, page, errors = open_game(
@@ -134,8 +142,10 @@ class FullWindowBackgroundTests(unittest.TestCase):
     def test_only_cave_background_ops(self):
         """Cold frames include tile construction as well as the main canvas."""
         page = self.boot((1920, 1080, False))
+        # The boot run is Grapple Over (4f509ed TASK-459): put version back,
+        # or its climb autosave throws ClimbModeRequired on the next frame
         records = page.evaluate('''() => {
-            const records = {}
+            const records = {}, booted = version
             for (const scene of ['bad', 'classic']) {
                 version = scene
                 const ops = [], proto = CanvasRenderingContext2D.prototype
@@ -146,7 +156,7 @@ class FullWindowBackgroundTests(unittest.TestCase):
                     originals[name] = proto[name]
                     proto[name] = function(...args) {
                         ops.push({op: name, args: args.map(a => typeof a == 'number' ? a : 'canvas'),
-                            caller: new Error().stack.split('\\n').slice(2, 6).join('\\n')})
+                            caller: new Error().stack.split('\\n').slice(2, 10).join('\\n')})
                         return originals[name].apply(this, args)
                     }
                 }
@@ -157,6 +167,7 @@ class FullWindowBackgroundTests(unittest.TestCase):
                     b.paint()
                 } finally {
                     for (const [name, original] of Object.entries(originals)) proto[name] = original
+                    version = booted
                 }
                 records[scene] = ops
             }
@@ -164,16 +175,22 @@ class FullWindowBackgroundTests(unittest.TestCase):
         }''')
         for scene, ops in records.items():
             gradients = [op for op in ops if op['op'].startswith('create')]
-            self.assertEqual([op['op'] for op in gradients],
-                             ['createLinearGradient', 'createLinearGradient', 'createRadialGradient'])
-            for op in gradients:
-                self.assertIn('buildGradients', op['caller'])
+            # buildGradients: base + haze + vignette. Since 2553aba the far
+            # crystal tile is baked once with its own base + haze
+            # (drawCrystalLayer -> createVerticalGradients), so a cold
+            # renderer makes two more linear gradients, none per frame
+            built = [op['op'] for op in gradients if 'buildGradients' in op['caller']]
+            baked = [op['op'] for op in gradients if 'drawCrystalLayer' in op['caller']
+                     and 'buildGradients' not in op['caller']]
+            self.assertEqual(built, ['createLinearGradient', 'createLinearGradient', 'createRadialGradient'])
+            self.assertEqual(baked, ['createLinearGradient', 'createLinearGradient'])
+            self.assertEqual(len(gradients), len(built) + len(baked))
             self.assertTrue(any(op['op'] == 'lineTo' for op in ops))
             self.assertTrue(any(op['op'] == 'drawImage' for op in ops))
             self.assertFalse(any(op['op'] == 'strokeRect' for op in ops))
             for op in ops:
                 self.assertNotRegex(op['caller'], 'Wash|Hexagon|Flash|Triangle|RectangleAccent|PolygonAccent')
-            print(f'{scene}: cave ops PASS; gradients=3; legacy decoration ops=0')
+            print(f'{scene}: cave ops PASS; gradients=3 built + 2 crystal bake; legacy decoration ops=0', file=sys.stderr)
         if self.evidence:
             (self.out() / 'ops.json').write_text(json.dumps(records, indent=2) + '\n')
 
@@ -257,18 +274,22 @@ class FullWindowBackgroundTests(unittest.TestCase):
         page.evaluate("startGame('classic')")
         page.wait_for_timeout(300)
         page.evaluate('''() => {
-            // paint() starts with one clearRect on the bar canvas
+            // paint() starts with one clearRect on the bar canvas; with
+            // GRADIENT_DITHER (bde3bf5 TASK-714) it paints a float16 scratch
+            // and the bar canvas gets one 'copy' drawImage per repaint
             const bars = document.getElementsByClassName('window-bar')[0].getContext('2d')
-            const clear = bars.clearRect
+            const hook = GRADIENT_DITHER.enabled ? 'drawImage' : 'clearRect'
+            const original = bars[hook]
             window.__barsPaints = 0
-            bars.clearRect = function() { window.__barsPaints++; return clear.apply(this, arguments) }
+            bars[hook] = function() { window.__barsPaints++; return original.apply(this, arguments) }
             window.__frames = 0
             const loop = () => { window.__frames++; requestAnimationFrame(loop) }
             requestAnimationFrame(loop)
         }''')
         page.wait_for_function('() => window.__frames >= 24', timeout=120000)
         run = page.evaluate('''() => ({frames: __frames, paints: __barsPaints,
-            every: WINDOW_BARS_EVERY_FRAMES, paused: menu.gamePaused})''')
+            every: WINDOW_BARS_EVERY_FRAMES, paused: menu.gamePaused,
+            dither: GRADIENT_DITHER.enabled})''')
         self.assertEqual(run['every'], 4)
         self.assertFalse(run['paused'])
         # rAF callbacks and game frames are counted apart: allow one frame each way
@@ -296,13 +317,14 @@ class FullWindowBackgroundTests(unittest.TestCase):
                     # click: the button starts the run once turned landscape
                     self.assertTrue(page.locator('#rotate-prompt').is_visible())
                     self.assertTrue(page.evaluate("document.getElementById('stage').inert"))
-                    # The boot run waits paused behind the prompt
+                    # The boot run (Grapple Over since 4f509ed TASK-459)
+                    # waits paused behind the prompt
                     point = click_canvas(page, *page.evaluate('''() => {
-                        const b = menu.backToMenu.background
+                        const b = (''' + CHILL_BUTTON + ''')().background
                         return [b.x + b.width / 2, b.y + b.height / 2]
                     }'''))
                     page.wait_for_timeout(500)
-                    self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
+                    self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'grapple_over'])
                     page.set_viewport_size({'width': viewport[1], 'height': viewport[0]})
                     page.wait_for_function('() => !isViewRotated() && !document.getElementById("stage").inert')
                     page.wait_for_timeout(300)
@@ -318,13 +340,13 @@ class FullWindowBackgroundTests(unittest.TestCase):
                     page.wait_for_function('() => menu.gamePaused')
                 page.wait_for_function('!unTouch')
                 button = page.evaluate('''() => {
-                    const b = menu.backToMenu.background
+                    const button = (''' + CHILL_BUTTON + ''')(), b = button.background
                     return {x: b.x + b.width / 2, y: b.y + b.height / 2,
-                            label: menu.backToMenu.text.text}
+                            label: button.text.text}
                 }''')
                 point = click_canvas(page, button['x'], button['y'])
                 page.wait_for_function('() => version === "classic" && !menu.gamePaused')
-                state = page.evaluate('''() => ({version, label: menu.backToMenu.text.text,
+                state = page.evaluate('''() => ({version, label: menu.modeButtons[2].text.text,
                     gamePaused: menu.gamePaused, score: scoreText.count[version]})''')
                 lines.append(f'{viewport_name(viewport)} label={button["label"]!r} '
                              f'logical=({button["x"]:.1f},{button["y"]:.1f}) '
