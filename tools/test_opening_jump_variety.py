@@ -68,6 +68,9 @@ NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extend
 SHIPPED_DEFAULT = not os.environ.get('OPENING_VARIETY_MIN_SIDE_SCOPE')
 MIN_SIDE_SCOPE = os.environ.get('OPENING_VARIETY_MIN_SIDE_SCOPE') or 'all'
 PURPLE = dict(middle_purple=True, upper_purple=True) if SHIPPED_DEFAULT else {}
+# 42f87ba TASK-698 (v17): the generator default adds --purple-rest (retilted NG/NGM/NGU slabs, narrowed exits);
+# the in-process tune() comparisons of the shipped default use it too.
+REST = dict(purple_rest=True) if SHIPPED_DEFAULT else {}
 GENERATE_ARGS = [] if SHIPPED_DEFAULT else ['--min-side-scope', MIN_SIDE_SCOPE]
 RESIZED = ['P0', 'P1', 'P2', 'R3', 'L1', 'P4']
 
@@ -277,7 +280,7 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         try:
             cls.unshielded = retune.tune(json.loads(SOURCE.read_text()), opening=retune.OPENING,
                                          yellow_clearance=retune.YELLOW_CLEARANCE,
-                                         min_sides=None if MIN_SIDE_SCOPE == 'none' else MIN_SIDE_SCOPE)
+                                         min_sides=None if MIN_SIDE_SCOPE == 'none' else MIN_SIDE_SCOPE, **REST)
         finally:
             retune.add_shortcut_shields = shields
         cls.before_ids = {f['semanticId']: f['id'] for f in cls.before['fragments']}
@@ -404,7 +407,11 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         # Shipped v16 (TASK-687): the later purple encounters NGM-* / NGU-* are inserted the same way.
         purple_ids = {i for e in retune.purple_extensions(self.m) for i in e['encounters']}
         self.assertTrue(all(i.startswith('NG') for i in purple_ids))
-        self.assertEqual([i for i in ids[ids.index('S07-01'):] if i not in purple_ids],
+        # SEC-ext-summit (bfe3d45 TASK-711 v18, gauntlet eb3ab8a TASK-744 v20) and the Sky Spire (f720868 TASK-774
+        # v21) append S0-*/Z*/SP-*/Y* encounters after the old summit; the v7 route ends at the old summit.
+        summit = self.m.get('extSummit', {}).get('oldSummit')
+        end = next(k for k, r in enumerate(self.m['encounters']) if r['toFragment'] == summit) + 1 if summit else len(ids)
+        self.assertEqual([i for i in ids[ids.index('S07-01'):end] if i not in purple_ids],
                          [r['id'] for r in self.before['encounters'][6:]])
         self.__class__.shift=None
 
@@ -536,7 +543,13 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         self.assertEqual(sorted(s for s in compared if any(new[s][k] != unshielded[s][k] for k in keys)), shielded)
         same = lambda s: {k: self.unresized(unshielded[s])[k] for k in keys} == {k: old[twin(s)][k] for k in keys}
         # Easy opening, R1-R4, X10 and later terrain except the raised L1/L2 are identical.
-        kept = [s for s in order[:7]] + [s for s in order[cut:] if s not in ('L1', 'L2') and s in compared]
+        # 42f87ba TASK-698 (v17 --purple-rest default, c71c059 TASK-697) narrows the NG-EXIT ledge (960 -> 900);
+        # test_purple_route checks that exit, so here it only has to be narrower than the TASK-675 copy.
+        rested = [sem_of[retune.purple_extensions(self.m)[0]['exit']]] if REST else []
+        for s in rested:
+            self.assertLess(unshielded[s]['width'], old[twin(s)]['width'], s)
+        kept = [s for s in order[:7]] + [s for s in order[cut:] if s not in ('L1', 'L2') + tuple(rested)
+                                          and s in compared]
         changed = [s for s in kept if not same(s)]
         self.assertEqual(changed, [])
         # v15 adds vertical variety within the existing right/left runs. The
@@ -563,6 +576,12 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         ids_old = [r['id'] for r in prev['encounters']]
         tail_new, tail_old = ids_new[ids_new.index('S07-01'):], ids_old[ids_old.index('S07-01'):]
         added_later = {i for e in later_exts for i in e['encounters']}
+        # SEC-ext-summit (bfe3d45 TASK-711, gauntlet eb3ab8a TASK-744) / Sky Spire (f720868 TASK-774) encounters
+        # follow the old summit; test_gauntlet_route / test_spire_route cover them.
+        summit = self.m.get('extSummit', {}).get('oldSummit')
+        if summit:
+            end = next(k for k, r in enumerate(self.m['encounters']) if r['toFragment'] == summit) + 1
+            added_later |= {r['id'] for r in self.m['encounters'][end:]}
         self.assertEqual([i for i in tail_new if i not in added_later], tail_old)
         tail_new = tail_old
         gaps = {r['id']: abs(r['distance'] - rows_new[r['id']]['distance']) for r in prev['encounters'] if r['id'] in tail_new}
@@ -570,10 +589,18 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         ids_by_sem = {f['semanticId']: f['id'] for f in self.m['fragments']}
         touching = {r['id'] for r in self.m['encounters'] if {r['fromFragment'], r['toFragment']} & {ids_by_sem[s] for s in shielded + ['L1', 'L2']}}
         moved_gaps = sorted(k for k, v in gaps.items() if v >= 1e-6)
-        self.assertTrue(set(moved_gaps) <= touching, moved_gaps)
-        self.assertEqual(moved_gaps, ['NG-ENTRY', 'OPEN-L1-L2', 'OPEN-L2-P4'])
+        # 42f87ba TASK-698 (v17 --purple-rest default): the retilted NG2..NG5 and narrowed NG-EXIT move the NG
+        # chute's recorded transfers; internal ones keep the (0, 270] rule, the exit the 200% minimum.
+        rest_gaps = set(retune.purple_extensions(self.m)[0]['encounters']) & {
+            c['id'] for c in self.m['minimumSides'].get('transfersChanged', [])} if REST else set()
+        self.assertEqual(bool(rest_gaps), bool(REST))
+        self.assertTrue(set(moved_gaps) - rest_gaps <= touching, moved_gaps)
+        self.assertEqual(moved_gaps, sorted({'NG-ENTRY', 'OPEN-L1-L2', 'OPEN-L2-P4'} | rest_gaps))
         for k in moved_gaps:
-            self.assertGreaterEqual(rows_new[k]['distance'], 2 * GRAPPLE_RANGE - .01, k)
+            if rows_new[k].get('noGrappleZone'):
+                self.assertTrue(0 < rows_new[k]['distance'] <= retune.NO_GRAPPLE_INTERNAL_GAP, k)
+            else:
+                self.assertGreaterEqual(rows_new[k]['distance'], 2 * GRAPPLE_RANGE - .01, k)
         self.assertLess(max(v for k, v in gaps.items() if k not in moved_gaps), 1e-6)
         sem = lambda m, fid: next(f['semanticId'] for f in m['fragments'] if f['id'] == fid)
         self.assertEqual([tuple(twin(sem(self.m, r[k])) for k in ('fromFragment', 'toFragment')) for r in self.m['encounters'] if r['id'] in tail_new],
@@ -591,7 +618,7 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         fs = self.m['fragments']
         fids = [f['id'] for f in fs]
         lower = fs[:fids.index(ext['firstUpDeparture']) + 1]
-        late = fs[fids.index(pe['exit']) + 1:]
+        late = fs[fids.index(pe['exit']) + 1:fids.index(summit) + 1 if summit else len(fs)]
         xs = lambda group: [x for f in group for b in retune.svg.bodies(f) for x, _ in b]
         cover = lambda group, span: sum(max(0, min(b, span[1]) - max(a, span[0])) for a, b in
                                         merge([(min(xs([f])), max(xs([f]))) for f in group]))
@@ -662,20 +689,27 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         prev = {r['id']: r['distance'] for r in self.default['encounters']}
         moved = {c['id'] for c in ms.get('transfersChanged', [])}
         enc = {r['id']: r for r in self.m['encounters']}
+        # SEC-ext-summit (bfe3d45 TASK-711) / Sky Spire (f720868 TASK-774) are added after tune() by the CLI, so the
+        # in-process default has no encounters after the old summit; those are checked by their own suites.
+        summit = self.m.get('extSummit', {}).get('oldSummit')
+        if summit:
+            end = next(k for k, r in enumerate(self.m['encounters']) if r['toFragment'] == summit) + 1
+            self.assertEqual(set(enc) - set(prev), {r['id'] for r in self.m['encounters'][end:]})
+            enc = {i: r for i, r in enc.items() if i in prev}
         # Shipped v16 (TASK-687): L2 narrowed from its left end (TASK-686) only lengthens its own transfers, and
         # the shortened NGU exit (TASK-685) keeps the 200% outside-transfer minimum.
         nar = ms.get('narrowedFromLeft') or {}
         grown = {i for i, r in enc.items() if nar.get('fragment') in (r['fromFragment'], r['toFragment'])
                  and r['distance'] > prev[i] + 1e-6}
         self.assertEqual(bool(grown), bool(nar))
-        exits = {e['encounters'][-1] for e in retune.purple_extensions(self.m)[1:]}
+        # 42f87ba TASK-698 (v17 --purple-rest default, c71c059 TASK-697): every exit ledge is narrowed, NG-EXIT too.
+        exits = {e['encounters'][-1] for e in retune.purple_extensions(self.m)[0 if REST else 1:]}
         for i in moved:
             internal = enc[i].get('noGrappleZone') and 0 < enc[i]['distance'] <= retune.NO_GRAPPLE_INTERNAL_GAP
             outside = (i in grown or i in exits) and enc[i]['distance'] >= 2 * GRAPPLE_RANGE - COORD_TOL
             self.assertTrue(internal or outside, i)
         self.assertEqual(moved | grown, {i for i, r in enc.items() if abs(r['distance'] - prev[i]) > 1e-6})
-        drift = {r['id']: abs(r['distance'] - prev[r['id']]) for r in self.m['encounters']
-                 if r['id'] not in moved | grown}
+        drift = {i: abs(r['distance'] - prev[i]) for i, r in enc.items() if i not in moved | grown}
         self.assertLess(max(drift.values()), 1e-6, drift)
         self.__class__.min_sides = dict(changed=[c['semanticId'] for c in ms['changed']], scope=scope,
                                         openingEdges=len(rows), openingMinSide=min(r['length'] for r in rows),
@@ -1017,7 +1051,11 @@ class CombinationReplayTests(unittest.TestCase):
         fs = self.m['fragments']
         ids = [f['id'] for f in fs]
         lower = set(ids[:ids.index(self.m['lowerCatchExtension']['firstUpDeparture']) + 1])
-        late = fs[ids.index(self.m['purpleExtension']['exit']) + 1:]
+        # The late route ends at the old summit: SEC-ext-summit (gauntlet eb3ab8a TASK-744 v20) and the Sky Spire
+        # (f720868 TASK-774 v21) stack against the map's left edge and catch their own falls on safe spaces
+        # (test_gauntlet_route, test_spire_route; same scope as test_lower_catch_route, 180e635 TASK-824).
+        summit = self.m.get('extSummit', {}).get('oldSummit')
+        late = fs[ids.index(self.m['purpleExtension']['exit']) + 1:ids.index(summit) + 1 if summit else len(fs)]
         # The three leftmost late panels by contact point (semantic geometry, not frozen indices).
         sources = sorted(late, key=lambda f: retune.svg.contact(f)[0])[:3]
         out = []
