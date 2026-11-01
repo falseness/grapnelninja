@@ -29,6 +29,31 @@ CAMERA_SCALE = float(re.search(r"grapple_over: Object\.freeze\(\{cameraScale: ([
                                (ROOT / 'gameoptions.js').read_text()).group(1))
 
 
+# Screen.trackGrappleOver as it was before 271eb97 TASK-692 (moveScreen.js at 271eb97^): eased dead zone
+# (35-65% / 40-60% of the view) with a speed look-ahead. Installed on Screen.prototype for legacy_camera replays.
+LEGACY_CAMERA_JS = '''() => { Screen.prototype.trackGrappleOver = function (snap = false) {
+    const bounds = floors[0].level.bounds
+    const viewWidth = width / scale[version]
+    const viewHeight = height / scale[version]
+    const dt = physicsStepMs / 1000
+    const alpha = -Math.expm1(-dt / 0.18)
+    const clamp = (v, low, high) => Math.max(low, Math.min(high, v))
+    const track = (offset, position, speed, size, low, high, near, far) => {
+        if (high - low <= size) return (size - low - high) / 2
+        const look = clamp(speed * cyclesPerTick / dt * 0.15, -viewHeight * 0.2, viewHeight * 0.2)
+        const target = position + look + offset
+        const correction = clamp(target, size * near, size * far) - target
+        let next = snap ? size / 2 - position : offset + correction * alpha
+        next = clamp(next, ninja.radius - position, size - ninja.radius - position)
+        return clamp(next, size - high, -low)
+    }
+    this.x = track(this.x, ninja.x, ninja.speedX, viewWidth, bounds.left, bounds.right, 0.35, 0.65)
+    const lead = bounds.topLead
+    const top = lead ? Math.max(lead.limit, Math.min(bounds.top, bounds.top - lead.rate * (lead.from - ninja.y))) : bounds.top
+    this.y = track(this.y, ninja.y, ninja.speedY, viewHeight, top, bounds.bottom, 0.4, 0.6)
+} }'''
+
+
 def hashes():
     result = source_hashes()
     for name in ('grapple_over_verify.py', 'grapple_over_support.py',
@@ -122,6 +147,10 @@ def execute(manifest, browser, url, out, clip=False, filmstrip=False, on_frame=N
             # Legacy routes replay on the camera they were recorded at (0.375 before c2a6743 TASK-688): world
             # aims map to the same whole CSS pixels. Display/input mapping only; physics is unchanged.
             page.evaluate('k=>{scale.grapple_over=k}', manifest['metadata']['camera_scale'])
+        if manifest['metadata'].get('legacy_camera'):
+            # Routes recorded before 271eb97 TASK-692 replay on the camera they were recorded with (dead zone and
+            # speed look-ahead), so their aims stay on screen. Display/input mapping only; physics is unchanged.
+            page.evaluate(LEGACY_CAMERA_JS)
         page.evaluate("cancelAnimationFrame(game); window.requestAnimationFrame=()=>0; startGame('grapple_over'); CLIMB_UI.restart()")
         page.wait_for_function('!unTouch')
         if manifest['metadata'].get('spawn_at_rest'):
@@ -165,7 +194,8 @@ def execute(manifest, browser, url, out, clip=False, filmstrip=False, on_frame=N
                     if not inside and manifest['metadata'].get('blind_targets') == 'skip':
                         blind = event
                         continue
-                    require(inside, 'mandatory target outside viewport')
+                    require(inside, 'mandatory target outside viewport ' + json.dumps(dict(tick=tick, world=event['world'], client=point,
+                        ninja=page.evaluate('({x:ninja.x,y:ninja.y,speedY:ninja.speedY,screenY:screen.y})'))))
                 if event['event'].startswith('mouse'):
                     page.mouse.move(point['x'], point['y'])
                     (page.mouse.down if event['event'] == 'mousedown' else page.mouse.up)()

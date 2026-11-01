@@ -26,6 +26,8 @@ def metadata(kind='base-start'):
     import grapple_over_verify
     m = grapple_over_verify.metadata(kind)
     m['camera_scale'] = LEGACY_CAMERA_SCALE
+    # ...and its tracking (dead zone + look-ahead) from before 271eb97 TASK-692 centred the camera on the ninja.
+    m['legacy_camera'] = True
     if kind == 'base-start':
         m['spawn_at_rest'] = True
     return m
@@ -3311,7 +3313,8 @@ class ViaductV3ToleranceChecks(SwitchbackV3ToleranceChecks):
             viewport = m['metadata']['viewport']
             press = next(t for t in self.targets(trace, viewport) if t['tick']==400)
             # Client pixels per world unit: the 1080-unit logical height at the grapple_over camera scale.
-            k = viewport['height']/1080*0.25
+            # The replay camera is LEGACY_CAMERA_SCALE (4505cd5 TASK-846), not the shipped 0.25 (c2a6743 TASK-688).
+            k = viewport['height']/1080*LEGACY_CAMERA_SCALE
             to_client = lambda x, y: (press['client']['x']+(x-press['world']['x'])*k, press['client']['y']+(y-press['world']['y'])*k)
             (l, t), (r, b) = to_client(hook['left'], hook['top']), to_client(hook['right'], hook['bottom'])
             # Cross-check of the mapping: the camera is clamped to the right map edge (x 6480) at the press.
@@ -3336,7 +3339,7 @@ class ViaductV3ToleranceChecks(SwitchbackV3ToleranceChecks):
             '(6330,-7500) (and the east pier top lowered from -7300 to -7000 so the pull clears it), so at the S03-03 press '
             'pose its drawn rectangle and the nominal aim point (the hook itself) are below the touch pause button; '
             'the tap acquires the hook on both viewports.',
-            aim_point=self.VC.CREST_V3, hook_world_rect=hook, client_px_per_world={'1280':720/1080*0.25, '844':390/1080*0.25},
+            aim_point=self.VC.CREST_V3, hook_world_rect=hook, client_px_per_world={'1280':720/1080*LEGACY_CAMERA_SCALE, '844':390/1080*LEGACY_CAMERA_SCALE},
             pause_button_client_rects={str(k): v for k, v in self.PAUSE_BUTTON.items()}, runs=rows))
 
     def test_02_mistimed_release_no_bounce_back(self):
@@ -4444,7 +4447,7 @@ class DeflectorV3ToleranceChecks(SwitchbackV3ToleranceChecks):
             for device in ('desktop','touch'):
                 trace, viewport, prefix, mechanics = clips[f'{name}-{device}-nominal']
                 layout = json.loads(self.evidence.path(prefix+'/layout-probe.json').read_text())['frames']
-                scale = viewport['height']/1080*0.25
+                scale = viewport['height']/1080*LEGACY_CAMERA_SCALE  # replay camera (4505cd5 TASK-846)
                 press_tick = self.SEGMENTS[k][0][0]
                 event = next(e for e in trace['events'] if e['type']=='input' and e['tick']==press_tick and e['event'] in ('mousedown','touchstart'))
                 anchor = next(e for e in trace['events'] if e['type']=='acquisition' and e['tick'] >= press_tick)
@@ -4460,7 +4463,8 @@ class DeflectorV3ToleranceChecks(SwitchbackV3ToleranceChecks):
                 frame = layout[str(press_tick)]
                 hud = [dict(name=x['name'], kind=x['kind'], x=[x['x'], x['x']+x['width']], y=[x['y'], x['y']+x['height']]) for x in frame['boxes']]
                 texts = [h for h in hud if h['kind']=='text']
-                self.assertGreaterEqual(len(texts), 4, hud)
+                # Height, Best and Section rows; 023b45e TASK-796 dropped the Time row from the in-game HUD.
+                self.assertEqual(sorted(h['name'].split(':')[0] for h in texts), ['Best', 'Height', 'Section'], hud)
                 pause = dict(name='pause button (menu.clickToPause scan)', kind='pause', **self.PAUSE_BUTTON[viewport['width']])
                 point = dict(x=[event['client']['x']]*2, y=[event['client']['y']]*2)
                 gaps = {h['name']: dict(anchor=self.clearance(rect, h), press=self.clearance(point, h)) for h in texts+[pause]}
