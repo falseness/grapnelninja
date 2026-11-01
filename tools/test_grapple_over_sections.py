@@ -8909,6 +8909,9 @@ class Task544Tests(unittest.TestCase):
                 level.movers=[];
                 level.elements=[rect('floor',-2000,h,8000,60)];
                 level.encounters[0].elements=['floor'];
+                // 3d15578 TASK-662: a fall more than CLIMB_FALL_RECOVERY_DEPTH below the level spawn recovers
+                // to the spawn, so the spawn sits on this floor and the measured fall never counts as one.
+                level.spawn={...level.spawn,x:700,y:h-ninja.radius};
                 GRAPPLE_OVER_TEST.spawn({level,player:{x:700,y:-ninja.radius,speedX:0,speedY:0},camera:{x:0,y:-300}});
                 let t=0;
                 while(t<2000 && !(ninja.speedY===0 && Math.abs(ninja.y-(h-ninja.radius))<1e-5)) {GRAPPLE_OVER_TEST.step(1);t++}
@@ -9682,7 +9685,7 @@ class Task476Tests(unittest.TestCase):
 
 
 class Task532Tests(unittest.TestCase):
-    """Legacy Task465-Task476 re-spec: mapping, and the separate per-class run logs under legacy/."""
+    """Legacy Task465-Task476 re-spec: mapping (the legacy-log check was retired by TASK-848: the aliases are empty stubs since TASK-846)."""
     task_id = 'TASK-532'
     setUpClass = classmethod(V1Task465.setUpClass.__func__)
 
@@ -9713,32 +9716,6 @@ class Task532Tests(unittest.TestCase):
         self.evidence.write('mapping.json', dict(revision=self.proof['revision'], classes=rows,
             verify_checks={'check_s0%d_mechanics' % n: 'check_s0%d_v3_mechanics' % n for n in range(1, 5)}))
         print('PASS mapping: 12 legacy classes retired by TASK-846 (0 cases); their v3 counterparts run the v3 checks')
-
-    def test_02_legacy_logs(self):
-        import re
-        for legacy in LEGACY_V3_MAPPING:
-            task = 'TASK-'+legacy[4:7]
-            log = self.evidence.path(f'legacy/{task}.log')
-            self.assertTrue(log.exists(), log)
-            text = log.read_text()
-            names = self.case_names(globals()[legacy])
-            ran = re.findall(r'^Ran (\d+) tests? ', text, re.M)
-            self.assertEqual(ran, [str(len(names))], task)
-            self.assertRegex(text, r'\nOK\n', task)
-            self.assertNotRegex(text, r'skipped|^(FAIL|ERROR):|expected failures', task)
-            self.assertEqual(text.rstrip().splitlines()[-1], 'exit 0', task)
-            for name in names:
-                self.assertIn(f'{name} (test_grapple_over_sections.{legacy}', text)
-            configs = [l for l in self.evidence.path(f'legacy/{task}/commands.log').read_text().splitlines()
-                       if l.startswith('CONFIG ')]
-            config = json.loads(configs[-1][7:])
-            # Committing the ticket moves HEAD, so the run's revision only has to be HEAD or an
-            # ancestor of it; the source hashes are the guard that the tested files are unchanged.
-            ancestor = subprocess.run(['git', 'merge-base', '--is-ancestor', config['revision'], 'HEAD'],
-                                      cwd=ROOT, capture_output=True)
-            self.assertEqual(ancestor.returncode, 0, (task, config['revision'], 'not an ancestor of HEAD'))
-            self.assertEqual(config['source_hashes'], self.proof['source_hashes'], task)
-            print(f'PASS {legacy}: {len(names)} cases ok, exit 0, no skips, source hashes match')
 
     def test_03_source_hashes(self):
         V1Task465.test_03_source_hashes(self)
@@ -9863,7 +9840,7 @@ class Task488Tests(unittest.TestCase):
 
 
 class Task533Tests(unittest.TestCase):
-    """Legacy Task477-Task490 re-spec: mapping, and the separate per-class run logs under legacy/."""
+    """Legacy Task477-Task490 re-spec: mapping (the legacy-log check was retired by TASK-848: the aliases are empty stubs since TASK-846)."""
     task_id = 'TASK-533'
     setUpClass = classmethod(V1Task465.setUpClass.__func__)
     case_names = staticmethod(Task532Tests.case_names)
@@ -9907,32 +9884,6 @@ class Task533Tests(unittest.TestCase):
         self.evidence.write('mapping.json', dict(revision=self.proof['revision'], classes=rows,
             verify_checks={'check_s0%d_mechanics' % n: 'check_s0%d_v3_mechanics' % n for n in range(1, 9)}))
         print('PASS mapping: 12 S05-S08 legacy classes retired by TASK-846 (0 cases, v3 counterparts kept); 2 joins retired by TASK-835/836')
-
-    def test_02_legacy_logs(self):
-        import re
-        for legacy, (kind, _, counterpart, _) in LEGACY_V3_UPPER_MAPPING.items():
-            task = 'TASK-'+legacy[4:7]
-            log = self.evidence.path(f'legacy/{task}.log')
-            self.assertTrue(log.exists(), log)
-            text = log.read_text()
-            names = self.case_names(self.module(kind)[legacy])
-            self.assertEqual(re.findall(r'^Ran (\d+) tests? ', text, re.M), [str(len(names))], task)
-            self.assertRegex(text, r'\nOK\n', task)
-            self.assertNotRegex(text, r'skipped|^(FAIL|ERROR):|expected failures', task)
-            self.assertEqual(text.rstrip().splitlines()[-1], 'exit 0', task)
-            for name in names:
-                self.assertIn(f'{name} (test_grapple_over_{kind}.{legacy}', text)
-            configs = [l for l in self.evidence.path(f'legacy/{task}/commands.log').read_text().splitlines()
-                       if l.startswith('CONFIG ')]
-            config = json.loads(configs[-1][7:])
-            ancestor = subprocess.run(['git', 'merge-base', '--is-ancestor', config['revision'], 'HEAD'],
-                                      cwd=ROOT, capture_output=True)
-            self.assertEqual(ancestor.returncode, 0, (task, config['revision'], 'not an ancestor of HEAD'))
-            # Every file the run hashed (runtime, level, harness, both test files) is unchanged.
-            self.assertIn(f'tools/test_grapple_over_{kind}.py', config['source_hashes'], task)
-            for path, digest in config['source_hashes'].items():
-                self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(), digest, (task, path))
-            print(f'PASS {legacy}: {len(names)} cases ok, exit 0, no skips, source hashes match')
 
     def test_03_source_hashes(self):
         V1Task465.test_03_source_hashes(self)
