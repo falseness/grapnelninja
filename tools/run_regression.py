@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One regression runner for the browser/unit suites (TASK-811).
 
-    python3 tools/run_regression.py --out DIR [--only NAME ...] [--skip-slow]
+    python3 tools/run_regression.py --out DIR [--only NAME ...] [--skip-slow] [--timeout S]
 
 Runs every suite below with cwd tools/, one after another. Each suite's evidence
 env vars (*_EVIDENCE_DIR, GRAPPLE_OVER_EVIDENCE_DIR, RESIZE_SCREENS_DIR,
@@ -10,6 +10,9 @@ DIR/ev/<suite>, so nothing lands in tools/artifacts. Writes DIR/<suite>.log and 
 JSON line per suite to DIR/summary.jsonl:
     {suite, exit, ran, failures, errors, skipped, seconds}
 Screenshots/videos under DIR/ev/<suite> are deleted after a passing suite.
+NAME may be a dotted unittest name (module.Class). Each suite runs in its own session;
+on timeout the whole process group (plus any descendant that left it, e.g. browsers)
+gets SIGTERM, then SIGKILL after KILL_GRACE s, so no workers/browsers outlive it (TASK-851).
 Exits 1 when any suite fails.
 """
 import argparse
@@ -17,6 +20,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -39,12 +43,13 @@ SUITES = [
 ]
 SLOW = {'test_grapple_over_visuals'}  # about 25 min
 TIMEOUT = 3600
+KILL_GRACE = 10  # seconds between SIGTERM and SIGKILL of a timed-out suite
 EVIDENCE_VAR = re.compile(r"\b([A-Z0-9_]+_(?:EVIDENCE_DIR|SCREENS_DIR|SHOTS))\b")
 MEDIA = {'.png', '.jpg', '.jpeg', '.webp', '.webm', '.mp4', '.gif'}
 
 
 def evidence_env(suite, ev):
-    source = TOOLS / f'{suite}.py'
+    source = TOOLS / f"{suite.split('.')[0]}.py"
     names = set(EVIDENCE_VAR.findall(source.read_text()) if source.exists() else []) | {'GRAPPLE_OVER_EVIDENCE_DIR'}
     return {name: str(ev / name.lower()) if name in ('RESIZE_SCREENS_DIR', 'PAUSE_TIME_SHOTS') else str(ev)
             for name in sorted(names)}
@@ -59,20 +64,76 @@ def counts(text):
     return out
 
 
+def descendants(root):
+    """pids of every live descendant of root (from /proc), deepest last."""
+    children = {}
+    for stat in Path('/proc').glob('[0-9]*/stat'):
+        try:
+            fields = stat.read_text().rsplit(')', 1)[1].split()
+        except OSError:
+            continue
+        children.setdefault(int(fields[1]), []).append(int(stat.parent.name))
+    out, todo = [], [root]
+    while todo:
+        for pid in children.get(todo.pop(), []):
+            out.append(pid)
+            todo.append(pid)
+    return out
+
+
+def signal_all(pgid, pids, sig):
+    for target, send in [(pgid, os.killpg)] + [(pid, os.kill) for pid in pids]:
+        try:
+            send(target, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def alive(pgid, pids):
+    for target, send in [(pgid, os.killpg)] + [(pid, os.kill) for pid in pids]:
+        try:
+            send(target, 0)
+            return True
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            return True
+    return False
+
+
+def kill_tree(proc):
+    """SIGTERM the suite's process group and descendants, wait KILL_GRACE s, then SIGKILL them."""
+    pids = descendants(proc.pid)
+    signal_all(proc.pid, pids, signal.SIGTERM)
+    deadline = time.monotonic() + KILL_GRACE
+    while time.monotonic() < deadline:
+        proc.poll()
+        pids += [pid for pid in descendants(proc.pid) if pid not in pids]
+        if proc.returncode is not None and not alive(proc.pid, pids):
+            break
+        time.sleep(0.1)
+    signal_all(proc.pid, pids, signal.SIGKILL)
+    proc.wait()
+
+
 def run_suite(suite, out):
     ev = (out / 'ev' / suite).resolve()
     ev.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **evidence_env(suite, ev)}
     start = time.monotonic()
     with open(out / f'{suite}.log', 'w') as log:
-        if not (TOOLS / f'{suite}.py').exists():
-            log.write(f'missing suite tools/{suite}.py\n')
+        module = suite.split('.')[0]
+        if not (TOOLS / f'{module}.py').exists():
+            log.write(f'missing suite tools/{module}.py\n')
             code = 2
         else:
+            proc = subprocess.Popen([sys.executable, '-m', 'unittest', '-v', suite], cwd=TOOLS, env=env,
+                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             try:
-                code = subprocess.run([sys.executable, '-m', 'unittest', '-v', suite], cwd=TOOLS, env=env,
-                                      stdout=log, stderr=subprocess.STDOUT, timeout=TIMEOUT).returncode
+                code = proc.wait(timeout=TIMEOUT)
             except subprocess.TimeoutExpired:
+                kill_tree(proc)
+                log.flush()
                 log.write(f'\nTIMEOUT after {TIMEOUT}s\n')
                 code = 124
     row = dict(suite=suite, exit=code, **counts((out / f'{suite}.log').read_text(errors='replace')),
@@ -85,11 +146,14 @@ def run_suite(suite, out):
 
 
 def main():
+    global TIMEOUT
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--out', required=True, help='output dir (logs, summary.jsonl, ev/<suite>)')
     parser.add_argument('--only', nargs='+', metavar='NAME', help='run only these suites')
     parser.add_argument('--skip-slow', action='store_true', help='leave out ' + ', '.join(sorted(SLOW)))
+    parser.add_argument('--timeout', type=int, default=TIMEOUT, help=f'per-suite timeout in s (default {TIMEOUT})')
     args = parser.parse_args()
+    TIMEOUT = args.timeout
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     suites = args.only or [s for s in SUITES if not (args.skip_slow and s in SLOW)]
