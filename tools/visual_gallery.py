@@ -51,8 +51,10 @@ TICKS = [300, 900]
 # Since the boot run (TASK-360) draws from the seeded Math.random first, the
 # phone bad run scrolls over ticks ~622-736 instead. Since e882a5e (TASK-370)
 # its tick-174 death fast-restarts instead of waiting for the tick-301 tap on
-# the offer, so the swing starts at tick 646 and holds from tick ~760.
-GIF_CAPTURE = {'bad': ('phone', 646), 'classic': ('desktop', 60)}
+# the offer, so the swing started at tick 646. Since 4f509ed (TASK-459) the
+# boot run is Grapple Over, so the seeded phone bad run scrolls over ticks
+# ~258-360 instead; the swing starts at tick 262.
+GIF_CAPTURE = {'bad': ('phone', 262), 'classic': ('desktop', 60)}
 GIF_SIZE = (960, 540)
 GIF_FPS = 15
 GIF_STEP = 60 // GIF_FPS          # game ticks per GIF frame
@@ -235,8 +237,8 @@ def run(rev, out, log=print):
                 page.on('pageerror', lambda e, n=vp['name']: errors.append(f'{n}: {e}'))
                 page.goto(url + 'index.html', wait_until='load')
                 boot_frozen(page)
-                # Current trees boot straight into a 'bad' run (TASK-360/364);
-                # older revisions open the title menu
+                # Current trees boot straight into a run ('bad' since TASK-360/364,
+                # Grapple Over since 4f509ed TASK-459); older revisions open the title menu
                 if not page.evaluate('''() => typeof menu != "undefined" && (menu.visible ||
                         typeof runInProgress != "undefined" && runInProgress)'''):
                     raise RuntimeError('neither the menu nor the boot run is shown after load')

@@ -1,5 +1,10 @@
 """The canvas tutorial hint (render/tutorialhint.js) over a running 'bad' run.
 
+The game boots into Grapple Over (4f509ed TASK-459), so every page selects
+'bad' explicitly through the pause mode selector (menu.selectMode, what the
+mode buttons call); the new run shows the hint again (runStarted) because
+nothing has been pressed yet.
+
 The rendering tests force TUTORIAL_HINT.visible. Rendering checks: the hint is
 drawn between the player and the HUD; a visible hint adds no shadowBlur sets
 to the main context once its sprite is built; a language change rebuilds the
@@ -24,6 +29,7 @@ from pathlib import Path
 import unittest
 
 from browser_test_support import start_browser_test
+from game_harness import switch_mode
 from render_snapshot import CLOCK_SCRIPT
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +130,8 @@ class TutorialHintTests(unittest.TestCase):
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.goto(self.url + 'index.html')
         page.wait_for_function(BOOT_DONE)
+        self.assertEqual(page.evaluate('version'), 'grapple_over')
+        switch_mode(page, 'bad')
         self.assertEqual(page.evaluate('({version, runInProgress, paused: menu.gamePaused})'),
                          {'version': 'bad', 'runInProgress': True, 'paused': False})
         return page
@@ -165,6 +173,13 @@ class TutorialHintTests(unittest.TestCase):
         page.goto(self.url + 'index.html')
         self.frames(page, 1, until=BOOT_DONE)
         page.evaluate('() => { window.onblur = null }')
+        # Boot is Grapple Over (4f509ed TASK-459); select 'bad' on the frame clock
+        self.assertEqual(page.evaluate('version'), 'grapple_over')
+        page.evaluate("() => { menu.startPause(); menu.selectMode('bad') }")
+        self.frames(page, 1, until="version === 'bad' && runInProgress")
+        page.evaluate('() => { if (menu.gamePaused) menu.unPause() }')
+        self.assertEqual(page.evaluate('({version, runInProgress, paused: menu.gamePaused})'),
+                         {'version': 'bad', 'runInProgress': True, 'paused': False})
         page.evaluate(STARTUPS)
         return page
 
@@ -275,7 +290,8 @@ class TutorialHintTests(unittest.TestCase):
             self.frames(page, 1)
             self.assertFalse(page.evaluate('TUTORIAL_HINT.visible'))
         self.assertEqual(page.evaluate('[continueOffer.visible, runInProgress]'), [False, True])
-        self.leave_run(page, '() => { menu.startPause(); menu.backToMenu.click() }', check_hidden=True)
+        # The pause mode buttons replaced backToMenu (4f509ed TASK-459)
+        self.leave_run(page, "() => { menu.startPause(); menu.selectMode('classic') }", check_hidden=True)
         self.frames(page, 30)
         self.assertEqual(page.evaluate('({version, visible: TUTORIAL_HINT.visible})'),
                          {'version': 'classic', 'visible': False})

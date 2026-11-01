@@ -48,8 +48,8 @@ class VisualGalleryTest(unittest.TestCase):
                 with Image.open(out / c['file']) as png:
                     self.assertEqual(png.size, (c['width'], c['height']))
                 state = c['state']
-                # Boot starts a 'bad' run under the tutorial hint (TASK-360/367)
-                self.assertEqual(state['version'], 'bad' if c['mode'] == 'boot' else c['mode'])
+                # Boot starts a Grapple Over run (4f509ed TASK-459)
+                self.assertEqual(state['version'], 'grapple_over' if c['mode'] == 'boot' else c['mode'])
                 for key in visual_gallery.STATE_KEYS[:-1]:
                     self.assertIsInstance(state[key], (int, float), f'{name} {key}')
                     self.assertTrue(math.isfinite(state[key]), f'{name} {key}')
