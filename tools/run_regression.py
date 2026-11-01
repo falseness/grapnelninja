@@ -3,7 +3,7 @@
 
     python3 tools/run_regression.py --out DIR [--only NAME ...] [--skip-slow] [--timeout S]
 
-Runs every suite below with cwd tools/, one after another. Each suite's evidence
+Runs every tools/test_*.py (sorted, minus EXCLUDE) with cwd tools/, one after another. Each suite's evidence
 env vars (*_EVIDENCE_DIR, GRAPPLE_OVER_EVIDENCE_DIR, RESIZE_SCREENS_DIR,
 PAUSE_TIME_SHOTS, ... scanned from the suite source) point at the ABSOLUTE path
 DIR/ev/<suite>, so nothing lands in tools/artifacts. Writes DIR/<suite>.log and one
@@ -13,6 +13,7 @@ Screenshots/videos under DIR/ev/<suite> are deleted after a passing suite.
 NAME may be a dotted unittest name (module.Class). Each suite runs in its own session;
 on timeout the whole process group (plus any descendant that left it, e.g. browsers)
 gets SIGTERM, then SIGKILL after KILL_GRACE s, so no workers/browsers outlive it (TASK-851).
+Per-suite timeout: TIMEOUTS[suite], else TIMEOUT; --timeout S sets it for every suite.
 Exits 1 when any suite fails.
 """
 import argparse
@@ -27,22 +28,36 @@ import time
 
 TOOLS = Path(__file__).resolve().parent
 
-# artifacts/TASK-797/run_checks.sh, run_checks2.sh, then the suites they missed.
-SUITES = [
-    'test_grapple_over_save', 'test_imported_level_runtime', 'test_climb_fall_recovery', 'test_platform',
-    'test_analytics_wiring', 'test_analytics_facade', 'test_platform_backends', 'test_playgama_rewarded',
-    'test_rewarded_backends', 'test_go_back', 'test_go_back_dialog', 'test_go_back_ad', 'test_hud_glyphs',
-    'test_play_time', 'test_i18n', 'test_grapple_over_completion', 'test_grapple_over_visuals',
-    'test_analytics_progression', 'test_analytics_quit', 'test_analytics_design', 'test_platform_facade',
-    'test_progress', 'test_double_offer', 'test_fall_hint', 'test_long_fall_messages',
-    'test_grapnel_menu_toggle', 'test_menu_fps_checkbox', 'test_climb_tutorial_legend', 'test_double_grapnel',
-    'test_spawn_launch', 'test_safe_respawn', 'test_pause_time', 'test_continue', 'test_input', 'test_resize',
-    'test_rotate_landscape', 'test_ab_switches', 'test_adaptive_quality', 'test_perf_overlay',
-    'test_visualsperf_attribution', 'test_freeze_report', 'test_spire_route',
-    'test_no_grapple_render', 'test_fast_restart',
-]
-SLOW = {'test_grapple_over_visuals'}  # about 25 min
-TIMEOUT = 3600
+# Every tools/test_*.py runs (TASK-852); the hand-picked TASK-811 list missed 112 suites and they rotted.
+# EXCLUDE = {suite: reason}; a reason is never just "fails": a red suite gets fixed, not excluded.
+EXCLUDE = {}
+
+
+def discover():
+    """sorted tools/test_*.py module names minus EXCLUDE."""
+    return [p.stem for p in sorted(TOOLS.glob('test_*.py')) if p.stem not in EXCLUDE]
+
+
+SUITES = discover()
+# Suites that take more than 10 min each (TASK-812 timings); --skip-slow leaves them out.
+SLOW = {
+    'test_grapple_over_visuals', 'test_grapple_over_redesign', 'test_grapple_over_sections',
+    'test_grapple_over_regression', 'test_route_shortcuts', 'test_opening_jump_variety', 'test_extended_opening',
+    'test_level_route_arrows', 'test_purple_route',
+}
+TIMEOUT = 3600  # default per-suite timeout in s
+# Per-suite overrides. test_route_shortcuts' full matrix took 5092 s (TASK-773) and 9600 s (TASK-774);
+# test_grapple_over_sections took 21409 s (131 tests) and runs 190 tests at about 100 s each (TASK-852);
+# test_grapple_over_redesign 3109 s, test_opening_jump_variety 2045 s, test_grapple_over_visuals 2031 s.
+TIMEOUTS = {
+    'test_route_shortcuts': 6 * 3600,
+    'test_grapple_over_regression': 6 * 3600,  # Task498 re-runs Task444..497 and the shared-system suites
+    'test_grapple_over_redesign': 3 * 3600,
+    'test_grapple_over_sections': 8 * 3600,
+    'test_opening_jump_variety': 2 * 3600,
+    'test_grapple_over_visuals': 2 * 3600,
+}
+TIMEOUT_FORCED = False  # set by --timeout
 KILL_GRACE = 10  # seconds between SIGTERM and SIGKILL of a timed-out suite
 EVIDENCE_VAR = re.compile(r"\b([A-Z0-9_]+_(?:EVIDENCE_DIR|SCREENS_DIR|SHOTS))\b")
 MEDIA = {'.png', '.jpg', '.jpeg', '.webp', '.webm', '.mp4', '.gif'}
@@ -116,6 +131,11 @@ def kill_tree(proc):
     proc.wait()
 
 
+def suite_timeout(suite):
+    """TIMEOUTS[module] when set, else TIMEOUT (--timeout overrides both)."""
+    return TIMEOUT if TIMEOUT_FORCED else TIMEOUTS.get(suite.split('.')[0], TIMEOUT)
+
+
 def run_suite(suite, out):
     ev = (out / 'ev' / suite).resolve()
     ev.mkdir(parents=True, exist_ok=True)
@@ -129,12 +149,13 @@ def run_suite(suite, out):
         else:
             proc = subprocess.Popen([sys.executable, '-m', 'unittest', '-v', suite], cwd=TOOLS, env=env,
                                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            limit = suite_timeout(suite)
             try:
-                code = proc.wait(timeout=TIMEOUT)
+                code = proc.wait(timeout=limit)
             except subprocess.TimeoutExpired:
                 kill_tree(proc)
                 log.flush()
-                log.write(f'\nTIMEOUT after {TIMEOUT}s\n')
+                log.write(f'\nTIMEOUT after {limit}s\n')
                 code = 124
     row = dict(suite=suite, exit=code, **counts((out / f'{suite}.log').read_text(errors='replace')),
                seconds=round(time.monotonic() - start, 1))
@@ -146,14 +167,16 @@ def run_suite(suite, out):
 
 
 def main():
-    global TIMEOUT
+    global TIMEOUT, TIMEOUT_FORCED
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--out', required=True, help='output dir (logs, summary.jsonl, ev/<suite>)')
     parser.add_argument('--only', nargs='+', metavar='NAME', help='run only these suites')
     parser.add_argument('--skip-slow', action='store_true', help='leave out ' + ', '.join(sorted(SLOW)))
-    parser.add_argument('--timeout', type=int, default=TIMEOUT, help=f'per-suite timeout in s (default {TIMEOUT})')
+    parser.add_argument('--timeout', type=int, help=f'per-suite timeout in s for every suite '
+                        f'(default {TIMEOUT}, longer for ' + ', '.join(sorted(TIMEOUTS)) + ')')
     args = parser.parse_args()
-    TIMEOUT = args.timeout
+    if args.timeout is not None:
+        TIMEOUT, TIMEOUT_FORCED = args.timeout, True
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     suites = args.only or [s for s in SUITES if not (args.skip_slow and s in SLOW)]

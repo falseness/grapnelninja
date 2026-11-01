@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""run_regression.run_suite kills the whole suite tree on timeout (TASK-851). No browser.
+"""run_regression.run_suite kills the whole suite tree on timeout (TASK-851); the runner discovers every
+tools/test_*.py minus EXCLUDE (TASK-852). No browser.
 
 FakeGrandchildSuite is the fake suite: it is skipped unless RUN_REGRESSION_FAKE_MARKER is
 set, then spawns a SIGTERM-ignoring grandchild whose argv carries that marker and sleeps
@@ -72,6 +73,35 @@ class RunSuiteTimeoutTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             row = run_regression.run_suite('test_no_such_suite_851', Path(tmp))
         self.assertEqual(row['exit'], 2)
+
+
+class DiscoveryTest(unittest.TestCase):
+    def test_suites_are_every_test_file_minus_exclude(self):
+        on_disk = sorted(p.stem for p in Path(run_regression.TOOLS).glob('test_*.py'))
+        expected = [name for name in on_disk if name not in run_regression.EXCLUDE]
+        self.assertEqual(run_regression.SUITES, expected)
+        self.assertEqual(run_regression.discover(), expected)
+        self.assertGreater(len(expected), 100)
+        print(f'DISCOVERED {len(expected)} suites = {len(on_disk)} tools/test_*.py - {len(run_regression.EXCLUDE)} EXCLUDE')
+
+    def test_exclude_entries_have_a_real_reason(self):
+        for name, reason in run_regression.EXCLUDE.items():
+            self.assertTrue((Path(run_regression.TOOLS) / f'{name}.py').exists(), name)
+            self.assertIsInstance(reason, str)
+            self.assertNotIn(reason.strip().lower().rstrip('.'), ('', 'fails', 'failing', 'red', 'broken'), name)
+
+    def test_slow_and_timeouts(self):
+        suites = set(run_regression.SUITES)
+        self.assertLessEqual(run_regression.SLOW, suites)
+        self.assertLessEqual(set(run_regression.TIMEOUTS), suites)
+        self.assertIn('test_route_shortcuts', run_regression.SLOW)
+        self.assertGreaterEqual(run_regression.TIMEOUTS['test_route_shortcuts'], 4 * 3600)
+        # test_grapple_over_sections' full suite took 21409 s; 3 h killed it in the TASK-852 full run
+        self.assertGreater(run_regression.TIMEOUTS['test_grapple_over_sections'], 21409 * 1.2)
+        self.assertGreaterEqual(run_regression.suite_timeout('test_route_shortcuts.SomeClass'), 4 * 3600)
+        self.assertEqual(run_regression.suite_timeout('test_play_time'), run_regression.TIMEOUT)
+        with mock.patch.object(run_regression, 'TIMEOUT_FORCED', True), mock.patch.object(run_regression, 'TIMEOUT', 5):
+            self.assertEqual(run_regression.suite_timeout('test_route_shortcuts'), 5)
 
 
 if __name__ == '__main__':

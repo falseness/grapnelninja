@@ -9,24 +9,25 @@ Task498Tests orchestrates child runs only; it never runs itself or any class aft
     with GRAPPLE_OVER_EVIDENCE_DIR=<evidence>/new-suites/<Class>; passing runs keep only their logs;
   * a direct seeded classic/bad movement and bounce capture compared with artifacts/TASK-444.
 
-Two kinds of earlier class no longer describe the current game (artifacts/TASK-498/diagnosis.md):
-  * REPINNED: navigation/startup pins (two-mode backToMenu, boot not in Grapple Over). Each is a same-named
-    subclass below whose methods are the original source with explicit, asserted text edits; the selection
-    runs it instead of the original (test_grapple_over_baseline.py stays untouched: source_hashes() hashes it).
+Earlier classes that no longer described the current game (artifacts/TASK-498/diagnosis.md):
+  * REPINNED: Task444/455/456/459 are same-named subclasses the selection runs instead of the originals. Their
+    TASK-498 text edits now live in the originals (TASK-785/838/839), so since TASK-852 they only refuse to run
+    without GRAPPLE_OVER_EVIDENCE_DIR (never into the original tasks' artifacts).
   * SUPERSEDED: classes a later design ticket invalidated. They still run and must fail with exactly the
     recorded signature (failing test, asserting source line, exception text), so new breakage is not hidden.
+    Empty since TASK-852: all of them pass again.
+  * Task465..Task492 are retired 0-test stubs (TASK-835/846); Task498 test_02 asserts they still exist with 0 tests.
 
     python3 tools/test_grapple_over_regression.py list            # print the filtered collection, run nothing
     GRAPPLE_OVER_EVIDENCE_DIR=artifacts/... python3 tools/test_grapple_over_regression.py select Class   # one child
 """
 import hashlib
-import inspect
+import importlib
 import json
 import os
 import re
 import subprocess
 import sys
-import textwrap
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -56,65 +57,58 @@ LEGACY = {
     'test_left_wall': ('camera left wall', 'LEFT_WALL_EVIDENCE_DIR'),
     'test_boot_main_mode': ('boot/startup', 'BOOT_EVIDENCE_DIR'),
 }
-# Which TASK-444..497 classes exercise each shared subsystem the Grapple Over work touched.
+# TASK-465..492 were retired to empty (0-test) stub classes: Task465..488 by 4505cd5 TASK-846 (sections,
+# artifacts/TASK-846/retired.md), Task489..492 by d6894cd TASK-835 (integration, artifacts/TASK-835/retired.md).
+# Their names stay defined (test_02 asserts they still exist with 0 tests), so the live collection is Task444..497
+# minus these.
+STUBS = [f'Task{n}Tests' for n in range(465, 493)]
+LIVE = [f'Task{n}Tests' for n in range(444, 498) if f'Task{n}Tests' not in STUBS]
+# Which live TASK-444..497 classes exercise each shared subsystem the Grapple Over work touched
+# (TASK-852 dropped the stubbed Task465/466/487).
 SUBSYSTEM_SUITES = {
-    'input': ['Task455Tests', 'Task466Tests', 'Task487Tests', 'Task494Tests', 'Task497Tests'],
+    'input': ['Task455Tests', 'Task494Tests', 'Task497Tests'],
     'resize/layout': ['Task459Tests', 'Task494Tests', 'Task497Tests'],
     'pause/time': ['Task444Tests', 'Task456Tests', 'Task495Tests'],
     'persistence (save keys)': ['Task456Tests', 'Task459Tests', 'Task495Tests'],
     'ninja bounce': ['Task444Tests', 'Task447Tests', 'Task454Tests'],
     'broadphase collision': ['Task447Tests', 'Task452Tests', 'Task454Tests'],
     'mode switch/navigation': ['Task444Tests', 'Task459Tests', 'Task495Tests'],
-    'camera left wall': ['Task462Tests', 'Task465Tests'],
+    'camera left wall': ['Task462Tests'],
     'boot/startup': ['Task459Tests', 'Task496Tests'],
 }
 # Classes a later design ticket superseded (artifacts/TASK-498/diagnosis.md, bisected first bad commits).
 # failures: (test method, asserting source line, exception line regex), one per FAIL/ERROR block.
-SUPERSEDED = {
-    'Task445Tests': dict(commit='88fd0d9 / c493a2f', ticket='TASK-448 fixture growth; TASK-543 range 1080/0.375',
-        failures=[('test_fixture_geometry_and_rendering', 'self.assertEqual(len(geometry[0]), 4)',
-                   r'AssertionError: 91 != 4$'),
-                  ('test_three_modes_and_baseline_traces',
-                   "self.assertEqual(state['definition']['cameraScale'], 0.75)", r'AssertionError: 0\.375 != 0\.75$')]),
-    'Task446Tests': dict(commit='9f6506b', ticket='TASK-465 mountain replaced the TEST-ONLY fixture',
-        failures=[('test_camera_travel_preserves_world', "self.assertEqual(row['count'], 7)",
-                   r'AssertionError: 91 != 7$')] * 2),
-    'Task448Tests': dict(commit='bc2097f', ticket='TASK-451 fixture boundaries',
-        failures=[('test_fixed_boundaries_camera_backtracking_and_landings',
-                   "self.assertEqual(observed['anchorBefore'], [[360, 1100, 'base']])",
-                   r"AssertionError: Lists differ: \[\[360, 1110, None\]\] != \[\[360, 1100, 'base'\]\]$")]),
-    'Task449Tests': dict(commit='9f6506b', ticket='TASK-465 mountain replaced the TEST-ONLY fixture',
-        failures=[('test_tracking_and_video', 'self.assertLessEqual(p+c, v-r+1e-8)',
-                   r'AssertionError: [\d.]+ not less than or equal to [\d.]+$')]),
-    'Task450Tests': dict(commit='97ea9d0', ticket='TASK-458 owned gameplay input on pause/restore',
-        failures=[('test_aim_scroll_dpr_resize_rotation', "self.assertEqual(state['shots'],before+1)",
-                   r'AssertionError: 0 != 1$'),
-                  ('test_input_touch_mouse_cancel_camera_ui', "self.assertEqual(rows['touch_start']['shots'],1)",
-                   r'AssertionError: 0 != 1$')]),
-    'Task451Tests': dict(commit='c493a2f', ticket='TASK-543 range 1080/0.375',
-        failures=[('test_range_occlusion_motion', "self.assertEqual(row['attached'], expected, name)",
-                   r'AssertionError: True != False : range_541_angle_0$'),
-                  ('test_zero_aim_and_fresh_press', "self.assertEqual(row['attached'], expected, name)",
-                   r'AssertionError: True != False : expired$')]),
-    # TASK-785 re-specced Task457Tests/Task458Tests for the current tree (backend recovery hooks, the paused
-    # re-entered boot run, the layout-v3 selector, the climb pause Resume); both pass again and run as normal classes.
-    'Task460Tests': dict(commit='9f6506b', ticket='TASK-465 mountain replaced the TEST-ONLY fixture',
-        failures=[('test_climb_flow_and_localized_layout', "self.assertTrue(completed['stats']['completed'])",
-                   r'AssertionError: False is not true$')]),
-    'Task463Tests': dict(commit='c493a2f', ticket='TASK-543 range 1080/0.375',
-        failures=[('test_01_six_movement_families',
-                   "self.assertEqual((constants['range'],constants['scale']),(540,0.75))",
-                   r'AssertionError: Tuples differ: \(1080, 0\.375\) != \(540, 0\.75\)$'),
-                  ('test_02_independent_evidence_audit',
-                   "data=json.loads(self.evidence.path('calibration.json').read_text())",
-                   r"FileNotFoundError: \[Errno 2\] No such file or directory: '.*/Task463Tests/calibration\.json'$")]),
-    'Task464Tests': dict(commit='9f6506b', ticket='TASK-465 mountain replaced the TEST-ONLY fixture',
-        failures=[('test_manifest_and_full_map',
-                   "a=tasks[f'TASK-{465+i*3}']['description'];b=tasks[f'TASK-{466+i*3}']['description']",
-                   r"KeyError: 'TASK-465'$"),
-                  ('test_validator_and_partial_runtime', "result=page.evaluate('" "''() => {",
-                   r'Error: Page\.evaluate: Error: InvalidBuildStatus: S01$')]),
+# A class listed here must still run and fail with exactly that signature, so new breakage is not hidden.
+# Empty since TASK-852: every TASK-498 entry passes again (artifacts/TASK-852/classes/<Class>/tests.log, all OK):
+# Task445 (575b720 TASK-838 retired the fixture-geometry test), Task446/448 (e5ee67b TASK-839), Task449 (camera
+# re-spec 271eb97 TASK-692), Task450 (17641d7 TASK-834), Task451 (79f8806 TASK-832), Task460 (575b720 TASK-838), Task463
+# (3ebd07b TASK-833), Task464 (1e1936a TASK-837); Task457/458 were re-specced earlier by 4915759 TASK-785.
+SUPERSEDED = {}
+
+
+# Cases a later ticket deliberately @unittest.skip-ed: (exact skipped test names, reason regex, commit, ticket).
+# A child may skip exactly these and nothing else; any other skip fails test_02 (TASK-852).
+STALE_ROUTE = r'^TASK-496 route recorded before TASK-704 launch and later physics; no longer completes layout v3'
+KNOWN_SKIPS = {
+    'Task496Tests': dict(tests={'test_01_uninterrupted_completion', 'test_02_playback_video'}, reason=STALE_ROUTE,
+                         commit='4915759', ticket='TASK-785 completion on legacy-v3 with stale full-route replays skipped'),
+    'Task497Tests': dict(tests={'test_01_touch_completion', 'test_02_touch_video'}, reason=STALE_ROUTE,
+                         commit='4915759', ticket='TASK-785 completion on legacy-v3 with stale full-route replays skipped'),
 }
+
+
+def skipped_tests(text):
+    """{test method: skip reason} of one -v log (a docstring line may sit between the name and the result)."""
+    return dict(re.findall(r"^(test\w+) \([\w.]+\)(?:\n(?!test)[^\n]*)*? \.\.\. skipped '([^\n]*)'$", text, re.M))
+
+
+def skip_mismatch(cls, skipped):
+    """None when skipped ({test: reason}) is exactly KNOWN_SKIPS[cls] (or empty when cls has none)."""
+    known = KNOWN_SKIPS.get(cls)
+    if set(skipped) != (known['tests'] if known else set()):
+        return f'skipped {sorted(skipped)}, expected {sorted(known["tests"]) if known else []}'
+    bad = {t: r for t, r in skipped.items() if not re.search(known['reason'], r)}
+    return f'unexpected skip reasons {bad}' if bad else None
 
 
 def failure_blocks(text):
@@ -144,19 +138,6 @@ def signature_mismatch(cls, text):
     return None
 
 
-def repin(base, name, *edits):
-    """base.name rebuilt from its own source after exact text edits; each edit must match exactly once."""
-    func = getattr(base, name)
-    source = textwrap.dedent(inspect.getsource(func))
-    for old, new in edits:
-        if source.count(old) != 1:
-            raise AssertionError(f'{base.__name__}.{name}: re-pin edit no longer matches: {old!r}')
-        source = source.replace(old, new)
-    scope = dict(vars(sys.modules[func.__module__]))
-    exec(compile(source, f'<{base.__name__}.{name} re-pinned by TASK-498>', 'exec'), scope)
-    return scope[name]
-
-
 class Repinned:
     """A re-pinned earlier class: refuses to run into the original task's own artifacts."""
     @classmethod
@@ -166,45 +147,24 @@ class Repinned:
         super().setUpClass()
 
 
-# Re-entering Grapple Over saves the climb and restores it paused (TASK-459). Boot already starts Grapple Over,
-# so the old "startGame('grapple_over') after boot" fresh start now re-enters; the re-pins keep the boot run.
-KEEP_BOOT_RUN = "if(version!=='grapple_over'||!runInProgress)startGame('grapple_over');"
-
-
+# The TASK-498 text re-pins (modeButtons instead of backToMenu, keeping the boot run, the tap debounce, no
+# same-mode button in the climb pause) were made in the originals themselves by e5ee67b TASK-839 (Task444
+# modeButtons, Task455 menu.unPause) and 575b720 TASK-838 / earlier (Task459 '!unTouch' tap, same-mode title), so
+# TASK-852 dropped them. These subclasses now only refuse to run into the original tasks' own artifacts.
 class Task444Tests(Repinned, _baseline.Task444Tests):
-    # The pause screen's two-mode backToMenu toggle became the three-mode menu.modeButtons (TASK-445/459)
-    test_grapple_pause_and_mode_switch = repin(
-        _baseline.Task444Tests, 'test_grapple_pause_and_mode_switch',
-        ("'''() => {const b=menu.backToMenu.background,",
-         "'''other => {const b=menu.modeButtons[['grapple_over', 'bad', 'classic'].indexOf(other)].background,"),
-        ("y:r.y+(b.y+b.height/2)*r.height/height}}''')",
-         "y:r.y+(b.y+b.height/2)*r.height/height}}''', 'bad' if mode == 'classic' else 'classic')"))
+    pass
 
 
 class Task455Tests(Repinned, _world.Task455Tests):
-    test_input_attachment_reversal_release_video = repin(
-        _world.Task455Tests, 'test_input_attachment_reversal_release_video',
-        ('''"() => {startGame('grapple_over');cancelAnimationFrame(game)}"''',
-         '"() => {' + KEEP_BOOT_RUN + 'cancelAnimationFrame(game)}"'))
+    pass
 
 
 class Task456Tests(Repinned, _save.Task456Tests):
-    # TASK-785: _save.Task456Tests.open itself now resumes the re-entered (paused) boot run, so it runs as is.
     pass
 
 
 class Task459Tests(Repinned, _modes.Task459Tests):
-    def tap(self, page, box):
-        # A menu tap arms STYLE.timing.inputUntouchMs, during which the next tap is ignored (events.js unTouch);
-        # the climb pause (TASK-460) put consecutive selector taps inside that window
-        page.wait_for_function('!unTouch')
-        super().tap(page, box)
-
-    # The climb pause (CLIMB_UI, TASK-460) lists resume, restart and the two other modes, not Grapple Over itself
-    test_boot_transitions_and_localized_touch_layout = repin(
-        _modes.Task459Tests, 'test_boot_transitions_and_localized_touch_layout',
-        ("self.tap(page,next(b for b in buttons if b['name']==label))\n",
-         "self.assertNotIn(label,[b['name'] for b in buttons])\n"))
+    pass
 
 
 REPINNED = {cls.__name__: cls for cls in (Task444Tests, Task455Tests, Task456Tests, Task459Tests)}
@@ -235,6 +195,18 @@ def selected(only=None):
             out.append(test)
         elif isinstance(test, unittest.loader._FailedTest):
             out.append(test)  # an import error must fail the run, not vanish
+    return out
+
+
+def class_case_counts():
+    """{TaskNNNTests: [test count of each definition]} over the test_grapple_over_*.py modules."""
+    loader, out = unittest.TestLoader(), {}
+    for path in sorted(TOOLS.glob('test_grapple_over_*.py')):
+        module = importlib.import_module(path.stem)
+        for name, obj in vars(module).items():
+            if (NEW_CLASS.match(name) and isinstance(obj, type) and issubclass(obj, unittest.TestCase)
+                    and obj.__module__ == module.__name__):
+                out.setdefault(name, []).append(loader.loadTestsFromTestCase(obj).countTestCases())
     return out
 
 
@@ -289,11 +261,13 @@ STARTUP_NOTE = (
     'Preserved old-mode gameplay: explicitly selected classic and bad keep their initial state, constants, '
     '12-step seeded movement, flat/sloped bounce response, throw/release, pause freeze and resume exactly as '
     'captured by TASK-444 before any Grapple Over change, and the old shared-system suites still pass. '
-    'Re-pinned startup/navigation assertions only: Task444 clicks the old mode through menu.modeButtons instead of '
-    'backToMenu; Task455/456 keep the boot Grapple Over run instead of re-entering it (re-entry restores the save '
-    'paused); Task459 waits out the menu tap debounce and expects no same-mode button in the climb pause. '
+    'The TASK-498 startup/navigation re-pins (Task444 menu.modeButtons, Task455/456 resuming the paused boot run, '
+    'Task459 tap debounce and no same-mode button) now live in the original classes (TASK-785/838/839); the '
+    'Task444/455/456/459 subclasses here only guard GRAPPLE_OVER_EVIDENCE_DIR. Task465..492 are retired 0-test stubs '
+    '(TASK-835/846). Task496/497 skip exactly their two stale full-route replays each (KNOWN_SKIPS, 4915759 '
+    'TASK-785); any other skip fails. '
     'Classes a later design ticket superseded run unchanged and must fail with exactly their recorded signature '
-    '(SUPERSEDED, artifacts/TASK-498/diagnosis.md).')
+    '(SUPERSEDED, artifacts/TASK-498/diagnosis.md, re-checked by TASK-852).')
 
 
 class Task498Tests(unittest.TestCase):
@@ -348,8 +322,13 @@ class Task498Tests(unittest.TestCase):
     def test_02_new_grapple_over_suites(self):
         tests = selected()
         classes = sorted({type(t).__name__ for t in tests})
-        self.assertEqual(classes, [f'Task{n}Tests' for n in range(444, 498)])
+        self.assertEqual(classes, LIVE)
         self.assertNotIn('Task498Tests', classes)
+        counts = class_case_counts()
+        for stub in STUBS:  # retired, not vanished: still defined, with no cases
+            self.assertEqual(counts.get(stub), [0], stub)
+        self.assertEqual(sorted(counts), [f'Task{n}Tests' for n in range(444, 498)])
+        self.evidence.log(f'STUBS {len(STUBS)} classes Task465..Task492 defined with 0 tests')
         root = self.evidence.path('new-suites/x').parent
         self.evidence.log(f'SELECT {SELECT}: {len(tests)} tests in {len(classes)} classes')
         (root / 'selected.txt').write_text('\n'.join(t.id() for t in tests) + '\n')
@@ -368,6 +347,9 @@ class Task498Tests(unittest.TestCase):
                               f'{" ".join(command)} > new-suites/{cls}/tests.log 2>&1')
             out.mkdir(parents=True, exist_ok=True)
             summary = self.run_child(cls, command, env, out / 'tests.log')
+            summary['skipped_tests'] = skipped_tests((out / 'tests.log').read_text())
+            summary['skip_mismatch'] = skip_mismatch(cls, summary['skipped_tests'])
+            summary['known_skips'] = len(summary['skipped_tests']) if summary['skip_mismatch'] is None else 0
             if cls in SUPERSEDED:
                 text = (out / 'tests.log').read_text()
                 summary.update(status='SUPERSEDED', **{k: SUPERSEDED[cls][k] for k in ('commit', 'ticket')},
@@ -397,18 +379,21 @@ class Task498Tests(unittest.TestCase):
         for cls, summary in results.items():
             with self.subTest(cls=cls):
                 self.assertEqual(summary['ran'], sum(type(t).__name__ == cls for t in tests), summary)
-                self.assertEqual(summary['skipped'], 0, summary)
+                self.assertIsNone(summary['skip_mismatch'], summary)  # only KNOWN_SKIPS, exactly
                 if cls in SUPERSEDED:
                     self.assertEqual(summary['exit'], 1, summary)
                     self.assertIsNone(summary['signature_mismatch'], summary)
                     continue
                 self.assertEqual(summary['exit'], 0, summary)
                 self.assertTrue(summary['result'].startswith('OK'), summary)
+                self.assertEqual(summary['result'], f'OK (skipped={summary["known_skips"]})'
+                                 if summary['known_skips'] else 'OK', summary)
                 self.assertEqual(summary['browser_errors'], 0, summary)
                 self.assertFalse(any('Task498Tests' in c or not NEW_CLASS.match(c.split('.')[0])
                                      for c in summary['cases']), summary['cases'])
-        print(f'PASS {len(tests)} tests in {len(classes)} classes Task444..Task497: '
-              f'{len(classes) - len(SUPERSEDED)} exit 0 ({len(REPINNED)} re-pinned), 0 skipped; '
+        print(f'PASS {len(tests)} tests in {len(classes)} classes Task444..Task497 minus {len(STUBS)} 0-test stubs: '
+              f'{len(classes) - len(SUPERSEDED)} exit 0 ({len(REPINNED)} re-pinned), '
+              f'only the {sum(len(k["tests"]) for k in KNOWN_SKIPS.values())} KNOWN_SKIPS skipped; '
               f'{len(SUPERSEDED)} SUPERSEDED fail with exactly their recorded signature')
 
     def capture(self):
@@ -499,28 +484,35 @@ class Task498Tests(unittest.TestCase):
                       subsystems=subsystems, old_mode_physics=traces['comparison'],
                       classes={c: dict(status=s['status'], exit=s['exit'], ran=s['ran'], skipped=s['skipped'],
                                        log=s['log'], **({'repinned': True} if s.get('repinned') else {}),
+                                       **({'known_skips': sorted(s['skipped_tests']),
+                                           'skip_source': f"{KNOWN_SKIPS[c]['commit']} {KNOWN_SKIPS[c]['ticket']}"}
+                                          if s['known_skips'] else {}),
                                        **({k: s[k] for k in ('commit', 'ticket', 'observed_failures',
                                                               'signature_mismatch')} if c in SUPERSEDED else {}))
                                for c, s in new.items()},
-                      superseded_source='artifacts/TASK-498/diagnosis.md',
+                      superseded_source='artifacts/TASK-498/diagnosis.md, re-checked by TASK-852',
+                      stubs=STUBS,
                       old_mode_physics_match_baseline=all(all(v for k, v in row.items() if k != 'browser_errors')
                                                           for row in traces['comparison'].values()),
                       totals=dict(existing_suites=len(legacy), existing_tests=sum(s['ran'] for s in legacy.values()),
                                   new_classes=len(new), new_tests=sum(s['ran'] for s in new.values()),
+                                  stub_classes=len(STUBS),
                                   passed_classes=sum(s['status'] == 'PASS' for s in new.values()),
                                   superseded_classes=sum(s['status'] == 'SUPERSEDED' for s in new.values()),
                                   nonzero_exits=sum(s['exit'] != 0 for s in list(legacy.values()) + live),
-                                  skipped=sum(s['skipped'] for s in list(legacy.values()) + list(new.values())),
+                                  skipped=sum(s['skipped'] for s in legacy.values()) + sum(
+                                      len(s['skipped_tests']) - s['known_skips'] for s in new.values()),
+                                  known_skips=sum(s['known_skips'] for s in new.values()),
                                   browser_errors=errors),
                       expected_changes_vs_preserved=STARTUP_NOTE)
         self.evidence.write('regression.json', report)
         self.evidence.path('logs/README.md').write_text(
             '# TASK-498 suite logs\n\n' + STARTUP_NOTE + '\n\nlogs/<suite>.log: complete output of each existing '
             'shared-system suite; logs/legacy-summary.json: exit/counts. new-suites/<Class>/tests.log: complete '
-            'output of each Task444..Task497 child run (bulky traces/media pruned after a pass); '
+            'output of each live Task444..Task497 child run (Task465..492 are 0-test stubs; bulky traces/media pruned after a pass); '
             'new-suites/summary.json: exit/counts.\n')
         self.assertTrue(report['old_mode_physics_match_baseline'])
-        self.assertEqual(sorted(report['classes']), [f'Task{n}Tests' for n in range(444, 498)])
+        self.assertEqual(sorted(report['classes']), LIVE)
         for subsystem, row in subsystems.items():
             self.assertTrue(all(r['status'] == 'PASS' for r in row['new_suites'].values()), subsystem)
         for cls, row in report['classes'].items():
@@ -528,7 +520,8 @@ class Task498Tests(unittest.TestCase):
             if cls in SUPERSEDED:
                 self.assertIsNone(row['signature_mismatch'], row)
         self.assertEqual(report['totals']['nonzero_exits'], 0)
-        self.assertEqual(report['totals']['skipped'], 0)
+        self.assertEqual(report['totals']['skipped'], 0)  # beyond KNOWN_SKIPS
+        self.assertEqual(report['totals']['known_skips'], sum(len(k['tests']) for k in KNOWN_SKIPS.values()))
         self.assertEqual(errors, 0)
         print(f'PASS regression map: {len(subsystems)} subsystems, {report["totals"]}')
 
