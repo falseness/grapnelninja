@@ -205,7 +205,10 @@ class RotateLandscapeTests(unittest.TestCase):
         s = page.evaluate(STATE)
         self.assertFalse(s['rotated'])
         self.assertEqual(s['transform'], '')
-        self.assertGreater(s['canvas']['width'], s['canvas']['height'])
+        # Not rotated: the canvas is never taller than wide. Re-pinned TASK-880: 7dfb352 (TASK-876) lowered the
+        # desktop aspect floor from 4:3 to 1:1 (gameoptions.js minViewportAspect), so a 390x844 desktop window
+        # now letterboxes to a square 390x390 canvas (was 390x292.5, strictly wider).
+        self.assertGreaterEqual(s['canvas']['width'], s['canvas']['height'])
         self.assertEqual(errors, {'console': [], 'page': []})
 
     def test_landscape_phone_is_not_rotated(self):
