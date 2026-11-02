@@ -1,204 +1,291 @@
-// itch.io platform backend stub.
+// itch.io platform backend (ported, TASK-856).
 // itch.io has no SDK: the game runs in an itch.io iframe and keeps saves in
-// localStorage, so most REPLACE lines say "nothing" and this stub is the port.
+// localStorage, so most methods are the local no-ops below.
 // Docs: https://itch.io/docs/creators/html5
 // Script tag: none: itch.io has no SDK; upload the zip with index.html at its root (no extra <script> tag)
-// For now every inner method behaves like local.js (localStorage storage,
-// no-op ads/lifecycle/leaderboards) by calling LOCAL_PLATFORM_BACKEND, which
-// must be loaded first; to port, replace each body with its REPLACE line.
-// See docs/platform-sdk.md.
+// Self-contained: it no longer calls LOCAL_PLATFORM_BACKEND (local.js still
+// loads first in a build, see docs/platform-sdk.md, but nothing here uses it).
+// - init resolves {environment: 'itch', language} from navigator.language
+// - no ads: no interstitials, no rewarded ads (Go back is free), no banners
+// - saves: localStorage, with an in-memory fallback when storage is blocked
+//   (a sandboxed or third-party iframe can throw SecurityError)
+// - onPause: window blur or a hidden document -> fn(true); focus with a
+//   visible document -> fn(false). The game pauses and mutes on fn(true).
 var PLATFORM_BACKEND = (function()
 {
-    const base = LOCAL_PLATFORM_BACKEND
+    const memory = new Map()
+    const pauseListeners = []
+    let language = null
+    let warned = false
+    let blurred = false
+    let hidden = false
+    let paused = false
+    let watching = false
+
+    function warn(message, e)
+    {
+        if (warned)
+            return
+        warned = true
+        console.warn('localStorage unavailable, keeping progress in memory:', message, e && e.message)
+    }
+
+    function isoLanguage(value)
+    {
+        const code = String(value || '').slice(0, 2).toLowerCase()
+        return /^[a-z]{2}$/.test(code) ? code : 'en'
+    }
+
+    function navigatorLanguage()
+    {
+        try
+        {
+            return navigator.language
+        }
+        catch (e)
+        {
+            return null
+        }
+    }
+
+    function storage()
+    {
+        try
+        {
+            return window.localStorage || null
+        }
+        catch (e)
+        {
+            warn('access failed', e)
+            return null
+        }
+    }
+
+    function localGet(key)
+    {
+        const local = storage()
+        if (local)
+        {
+            try
+            {
+                const value = local.getItem(key)
+                if (value !== null)
+                    return value
+            }
+            catch (e)
+            {
+                warn('read failed', e)
+            }
+        }
+        return memory.has(key) ? memory.get(key) : null
+    }
+
+    function localSet(key, value)
+    {
+        memory.set(key, value)
+        const local = storage()
+        if (!local)
+            return
+        try
+        {
+            local.setItem(key, value)
+        }
+        catch (e)
+        {
+            warn('write failed', e)
+        }
+    }
+
+    function documentHidden()
+    {
+        return document.visibilityState === 'hidden'
+    }
+
+    // Tells every listener when the paused state (blurred or hidden) changes
+    function update()
+    {
+        const now = blurred || hidden
+        if (now === paused)
+            return
+        paused = now
+        for (const fn of pauseListeners.slice())
+        {
+            try
+            {
+                fn(paused)
+            }
+            catch (e)
+            {
+                console.warn('itch onPause listener failed:', e && e.message || e)
+            }
+        }
+    }
+
+    function watch()
+    {
+        if (watching)
+            return
+        watching = true
+        hidden = documentHidden()
+        paused = hidden
+        window.addEventListener('blur', function()
+        {
+            blurred = true
+            update()
+        })
+        window.addEventListener('focus', function()
+        {
+            blurred = false
+            hidden = documentHidden()
+            update()
+        })
+        document.addEventListener('visibilitychange', function()
+        {
+            hidden = documentHidden()
+            update()
+        })
+    }
 
     return {
         platformId: 'itch',
 
-        // REPLACE: nothing: performance.now()
-        // https://itch.io/docs/creators/html5
         now()
         {
-            return base.now()
+            return performance.now()
         },
 
-        // REPLACE: nothing: resolve {environment: 'itch', language: navigator.language 2-letter code}
-        // https://itch.io/docs/creators/html5
         init()
         {
-            return base.init()
+            language = isoLanguage(navigatorLanguage())
+            return Promise.resolve({environment: 'itch', language})
         },
 
-        // REPLACE: nothing: no ads on itch.io, return false
-        // https://itch.io/docs/creators/html5
+        // No ads on itch.io: the death screen never waits for an interstitial
         isInterstitialSupported()
         {
-            return base.isInterstitialSupported()
+            return false
         },
 
-        // REPLACE: nothing: return false
-        // https://itch.io/docs/creators/html5
-        isInterstitialDue(...args)
+        isInterstitialDue()
         {
-            return base.isInterstitialDue(...args)
+            return false
         },
 
-        // REPLACE: nothing: resolve 'skipped'
-        // https://itch.io/docs/creators/html5
-        showInterstitial(...args)
+        showInterstitial()
         {
-            return base.showInterstitial(...args)
+            return Promise.resolve('skipped')
         },
 
-        // REPLACE: nothing
-        // https://itch.io/docs/creators/html5
-        sendMessage(...args)
+        sendMessage()
         {
-            return base.sendMessage(...args)
+            return Promise.resolve()
         },
 
-        // REPLACE: nothing
-        // https://itch.io/docs/creators/html5
-        sendLifecycle(...args)
+        sendLifecycle()
         {
-            return base.sendLifecycle(...args)
+            return Promise.resolve()
         },
 
-        // REPLACE: nothing (or gameanalytics.GameAnalytics.addDesignEvent(id, value) when GameAnalytics is on)
-        // https://itch.io/docs/creators/html5
-        track(...args)
+        // GameAnalytics (when on) is a separate analytics backend
+        track()
         {
-            return base.track(...args)
         },
 
-        // REPLACE: nothing (or gameanalytics.GameAnalytics.addProgressionEvent(Start, stage) when GameAnalytics is on)
-        // https://itch.io/docs/creators/html5
-        startup(...args)
+        startup()
         {
-            return base.startup(...args)
         },
 
-        // REPLACE: nothing
-        // https://itch.io/docs/creators/html5
         gameReady()
         {
-            return base.gameReady()
+            return Promise.resolve()
         },
 
-        // REPLACE: nothing: return {state: 'local'}
-        // https://itch.io/docs/creators/html5
         readiness()
         {
-            return base.readiness()
+            return {state: 'local'}
         },
 
-        // REPLACE: nothing: return true
-        // https://itch.io/docs/creators/html5
         isAudioEnabled()
         {
-            return base.isAudioEnabled()
+            return true
         },
 
-        // REPLACE: window.addEventListener('blur'/'focus') or document 'visibilitychange' -> fn(paused)
-        // https://itch.io/docs/creators/html5
+        // https://itch.io/docs/creators/html5: the game is an iframe on the
+        // page; it pauses (and mutes) while the player is elsewhere
         onPause(fn)
         {
-            return base.onPause(fn)
+            if (typeof fn !== 'function')
+                return
+            watch()
+            pauseListeners.push(fn)
         },
 
-        // REPLACE: nothing: itch.io has no host mute
-        // https://itch.io/docs/creators/html5
-        onAudio(fn)
+        // itch.io has no host mute; the game mutes itself on pause
+        onAudio()
         {
-            return base.onAudio(fn)
         },
 
-        // REPLACE: nothing: no ads
-        // https://itch.io/docs/creators/html5
-        onAdState(fn)
+        // No ads, so no ad state
+        onAdState()
         {
-            return base.onAdState(fn)
         },
 
-        // REPLACE: nothing
-        // https://itch.io/docs/creators/html5
-        loadingProgress(percent)
+        loadingProgress()
         {
-            return base.loadingProgress(percent)
         },
 
-        // REPLACE: nothing
-        // https://itch.io/docs/creators/html5
-        gameplayStart(level)
+        gameplayStart()
         {
-            return base.gameplayStart(level)
         },
 
-        // REPLACE: nothing
-        // https://itch.io/docs/creators/html5
-        gameplayStop(reason, level)
+        gameplayStop()
         {
-            return base.gameplayStop(reason, level)
         },
 
-        // REPLACE: nothing
-        // https://itch.io/docs/creators/html5
         happyMoment()
         {
-            return base.happyMoment()
         },
 
         // itch.io has no ad SDK, so there are no rewarded ads: false, and
         // the go-back dialog offers Go back for free (no ad marker).
-        // https://itch.io/docs/creators/html5
         isRewardedSupported()
         {
-            return base.isRewardedSupported()
+            return false
         },
 
-        // itch.io has no ad SDK: resolves 'unavailable' (going back is free)
-        // https://itch.io/docs/creators/html5
-        showRewarded(placement)
+        // No ad SDK: resolves 'unavailable' (going back is free)
+        showRewarded()
         {
-            return base.showRewarded(placement)
+            return Promise.resolve('unavailable')
         },
 
-        // REPLACE: nothing
-        // https://itch.io/docs/creators/html5
-        showBanner(position)
+        showBanner()
         {
-            return base.showBanner(position)
+            return Promise.resolve()
         },
 
-        // REPLACE: nothing
-        // https://itch.io/docs/creators/html5
         hideBanner()
         {
-            return base.hideBanner()
+            return Promise.resolve()
         },
 
-        // REPLACE: nothing: no leaderboards, resolve false
-        // https://itch.io/docs/creators/html5
-        submitScore(board, value)
+        // No leaderboards or achievements
+        submitScore()
         {
-            return base.submitScore(board, value)
+            return Promise.resolve(false)
         },
 
-        // REPLACE: nothing: resolve false
-        // https://itch.io/docs/creators/html5
-        unlockAchievement(id)
+        unlockAchievement()
         {
-            return base.unlockAchievement(id)
+            return Promise.resolve(false)
         },
 
-        // REPLACE: nothing: navigator.language 2-letter code
-        // https://itch.io/docs/creators/html5
+        // The 2-letter code init() read from navigator.language
         getLanguage()
         {
-            return base.getLanguage()
+            return language
         },
 
-        // REPLACE: nothing: 'itch'
-        // https://itch.io/docs/creators/html5
         getPlatformId()
         {
             return this.platformId
@@ -206,32 +293,32 @@ var PLATFORM_BACKEND = (function()
 
         storage:
         {
-            // REPLACE: nothing: return true
-            // https://itch.io/docs/creators/html5
+            // localStorage is read in full at boot
             remoteKnown()
             {
-                return base.storage.remoteKnown()
+                return true
             },
 
-            // REPLACE: nothing
-            // https://itch.io/docs/creators/html5
-            onRecovery(fn)
+            // No late remote read to reconcile
+            onRecovery()
             {
-                return base.storage.onRecovery(fn)
             },
 
-            // REPLACE: localStorage.getItem(key) for each key (as local.js)
-            // https://itch.io/docs/creators/html5
-            getMany(keys)
+            // Resolves {key: string | null} from localStorage
+            async getMany(keys)
             {
-                return base.storage.getMany(keys)
+                const result = {}
+                for (const key of keys)
+                    result[key] = localGet(key)
+                return result
             },
 
-            // REPLACE: localStorage.setItem(key, value) for each key (as local.js)
-            // https://itch.io/docs/creators/html5
-            setMany(obj)
+            // Saves {key: value} as strings in localStorage; true once written
+            async setMany(obj)
             {
-                return base.storage.setMany(obj)
+                for (const key of Object.keys(obj))
+                    localSet(key, String(obj[key]))
+                return true
             }
         }
     }

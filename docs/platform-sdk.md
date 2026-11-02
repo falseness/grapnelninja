@@ -7,12 +7,12 @@ backend file under `platform/backends/`:
 | file | platformId | status |
 |---|---|---|
 | `local.js` | `local` | default; localStorage storage, no ads; also exposes `LOCAL_PLATFORM_BACKEND` |
-| `itch.js` | `itch` | stub, behaves like local; no ad SDK, so no rewarded ads (going back is free) |
+| `itch.js` | `itch` | ported (TASK-856), self-contained: init `{environment: 'itch', language}` from `navigator.language`, localStorage saves (in-memory fallback), no ads (going back is free), `onPause` on window blur/focus and `visibilitychange`; the game pauses and mutes (`GAME_AUDIO` reason `host`) while paused; tested in an itch.io-like sandboxed 960x540 iframe by tools/test_itch_backend.py |
 | `gamepix.js` | `gamepix` | stub, behaves like local; rewarded ads (isRewardedSupported/showRewarded) use `window.GamePix.ads.reward` when present |
 | `y8.js` | `y8` | stub, behaves like local; rewarded ads (isRewardedSupported/showRewarded) use `window.y8.sdk().showAd({type: 'reward'})` when present |
 | `playgama.js` | `playgama` | stub, behaves like local; rewarded ads (isRewardedSupported/showRewarded) use `window.bridge.advertisement` when present |
 
-Each portal stub calls `LOCAL_PLATFORM_BACKEND` for every inner method (so the
+Each unported portal stub (gamepix, y8, playgama) calls `LOCAL_PLATFORM_BACKEND` for every inner method (so the
 storage code exists once) and carries a `// REPLACE: <SDK call>` line plus the
 portal docs URL above every inner method. Porting = replacing those bodies in
 that ONE file; platform.js and the game do not change.

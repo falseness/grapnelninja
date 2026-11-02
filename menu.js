@@ -1010,9 +1010,15 @@ const WIN_ART = {
     }
 }
 
-// Game audio state: muted while a rewarded ad plays (CLIMB_UI.goBack). The
-// game has no sound output yet; a future sound module reads muted.
-const GAME_AUDIO = {muted: false}
+// Game audio state: muted while any reason holds: 'ad' while a rewarded ad
+// plays (CLIMB_UI.goBack), 'host' while the host pauses the game (window blur,
+// a hidden tab, a portal pause event; index.html PLATFORM.onPause). The game
+// has no sound output yet; a future sound module reads muted.
+const GAME_AUDIO = {
+    reasons: new Set(),
+    get muted() { return this.reasons.size > 0 },
+    mute(reason, on) { if (on) this.reasons.add(reason); else this.reasons.delete(reason) }
+}
 
 // Climb statistics describe the current simulation; they never move the player.
 const CLIMB_UI = {
@@ -1546,15 +1552,15 @@ const CLIMB_UI = {
         if (this.goBackAdPending) return
         if (!PLATFORM.isRewardedSupported()) return this.returnBack()
         this.goBackAdPending = true
-        const world = this.goBackWorld, wasMuted = GAME_AUDIO.muted
-        GAME_AUDIO.muted = true
+        const world = this.goBackWorld
+        GAME_AUDIO.mute('ad', true)
         redrawOverlays()
         let timer
         const timeout = new Promise(resolve => { timer = setTimeout(() => resolve('failed'), this.goBackAdTimeoutMs) })
         Promise.race([PLATFORM.showRewarded('go_back'), timeout]).then(result => {
             clearTimeout(timer)
             this.goBackAdPending = false
-            GAME_AUDIO.muted = wasMuted
+            GAME_AUDIO.mute('ad', false)
             if (!this.goingBack || world !== floors[0]) return redrawOverlays()
             if (result === 'closed') this.keepFalling()
             else this.returnBack()

@@ -780,9 +780,11 @@
                 if (hidden)
                     pauseRun()
             })
-            // Host pause pauses the run; resuming is left to the player
+            // Host pause pauses and mutes the run; resuming is left to the
+            // player (the host resume only unmutes and lifts the block)
             PLATFORM.onPause(function(isPaused) {
                 hostPaused = isPaused
+                GAME_AUDIO.mute('host', isPaused)
                 if (isPaused)
                     pauseRun()
                 else if (bootComplete && !menu.opened() && !continueOffer.visible &&
