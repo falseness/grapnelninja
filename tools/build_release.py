@@ -65,6 +65,9 @@ SDK_TAGS = {
     'y8': '<script src="https://cdn.y8.com/minimal-sdk/2-0/y8.min.js" async></script>',
     'playgama': '<script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>',
 }
+# Bridge required step 2 / Playgama requirement 1.1.2: the SDK script is the
+# first script in <head>, loaded normally (not async/defer)
+SDK_FIRST_IN_HEAD = {'playgama'}
 ANALYTICS_TAG = '<script src = "analytics/backends/none.js"></script>'
 GA_SDK = 'analytics/vendor/GameAnalytics.min.js'
 GA_LICENSE = 'analytics/vendor/GameAnalytics.LICENSE.txt'
@@ -193,8 +196,20 @@ def script_assets(tree, scripts):
     return sorted(assets)
 
 
+def sdk_first_in_head(html, tag):
+    """html with tag inserted right before the first <script of <head>."""
+    head = re.search(r'<head\b[^>]*>(.*?)</head>', html, re.S | re.I)
+    if not head:
+        raise ValueError('index.html has no <head>')
+    first = re.search(r'^([ \t]*)<script\b', head.group(1), re.M | re.I)
+    if not first:
+        raise ValueError('index.html has no <script> in <head>')
+    at = head.start(1) + first.start()
+    return html[:at] + first.group(1) + tag + '\n' + html[at:]
+
+
 def portal_html(html, portal):
-    """index.html for the portal: SDK tag + portal backend after local.js."""
+    """index.html for the portal: SDK tag + portal backend after local.js (playgama: SDK tag first in <head>)."""
     if html.count(LOCAL_TAG) != 1:
         raise ValueError(f'index.html must load {LOCAL_TAG} exactly once')
     if html.count(ANALYTICS_TAG) != 1:
@@ -206,10 +221,12 @@ def portal_html(html, portal):
             raise ValueError(f'index.html already loads platform/backends/{other}.js')
     indent = re.search(r'^([ \t]*)' + re.escape(LOCAL_TAG), html, re.M).group(1)
     tags = [LOCAL_TAG]
-    if SDK_TAGS[portal]:
+    if SDK_TAGS[portal] and portal not in SDK_FIRST_IN_HEAD:
         tags.append(SDK_TAGS[portal])
     tags.append(BACKEND_TAG.format(portal=portal))
     html = html.replace(LOCAL_TAG, ('\n' + indent).join(tags))
+    if portal in SDK_FIRST_IN_HEAD:
+        html = sdk_first_in_head(html, SDK_TAGS[portal])
     if ANALYTICS_BACKENDS[portal] == GA_BACKEND:
         indent = re.search(r'^([ \t]*)' + re.escape(ANALYTICS_TAG), html, re.M).group(1)
         tags = [f'<script src = "{GA_SDK}"></script>', f'<script src = "{GA_BACKEND}"></script>']

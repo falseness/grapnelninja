@@ -355,9 +355,13 @@ class PlaygamaBackendTests(unittest.TestCase):
         html = self.files['index.html'].decode()
         self.assertEqual(html.count('platform/backends/'), 2)
         self.assertEqual(html.count(SDK_URL), 1)
+        # the SDK tag is the first script of <head> (Bridge required step 2,
+        # Playgama 1.1.2); the backend follows local.js
         sdk_at, backend_at = html.index(SDK_TAG), html.index(BACKEND_TAG)
-        self.assertLess(sdk_at, backend_at)
-        self.assertEqual(html[sdk_at + len(SDK_TAG):backend_at].strip(), '')
+        self.assertLess(sdk_at, html.index('</head>'))
+        self.assertEqual(sdk_at, html.index('<script'))
+        local_tag = '<script src = "platform/backends/local.js"></script>'
+        self.assertEqual(html[html.index(local_tag) + len(local_tag):backend_at].strip(), '')
         self.assertIn('analytics/backends/none.js', html)
         self.assertNotIn('gameanalytics', html.lower())
         config = self.files['buildconfig.js'].decode()

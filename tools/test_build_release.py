@@ -93,6 +93,24 @@ class Scripts(HTMLParser):
                 self.refs.append(a[name].strip())
 
 
+class HeadScripts(HTMLParser):
+    """(src or inline, async, defer) of each <script> inside <head>, in order."""
+    def __init__(self):
+        super().__init__()
+        self.in_head, self.head_scripts = False, []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'head':
+            self.in_head = True
+        elif tag == 'script' and self.in_head:
+            a = dict(attrs)
+            self.head_scripts.append(((a.get('src') or '<inline>').strip(), 'async' in a, 'defer' in a))
+
+    def handle_endtag(self, tag):
+        if tag == 'head':
+            self.in_head = False
+
+
 def parse(html):
     p = Scripts()
     p.feed(html)
@@ -182,7 +200,11 @@ class BuildReleaseTest(unittest.TestCase):
                     self.assertEqual(external, [])
                 else:
                     self.assertEqual([s for s, _ in external], [SDK_URLS[portal]])
-                    self.assertEqual(srcs[i_backend - 1], SDK_URLS[portal])
+                    if portal in build_release.SDK_FIRST_IN_HEAD:
+                        self.assertEqual(srcs[0], SDK_URLS[portal])
+                        self.assertEqual(srcs[i_backend - 1], 'platform/backends/local.js')
+                    else:
+                        self.assertEqual(srcs[i_backend - 1], SDK_URLS[portal])
                     self.assertEqual(external[0][1], portal == 'y8')  # only Y8's tag is async
                 analytics = build_release.ANALYTICS_BACKENDS[portal]
                 self.assertIn(analytics, srcs)
@@ -193,6 +215,22 @@ class BuildReleaseTest(unittest.TestCase):
                 for other in PORTALS:
                     if other != portal:
                         self.assertNotIn(f'platform/backends/{other}.js', self.zips[portal])
+
+    def test_02b_playgama_bridge_first_script_in_head(self):
+        """Bridge required step 2 / Playgama 1.1.2: the SDK is the first <head> script, not async/defer."""
+        p = HeadScripts()
+        p.feed(self.html('playgama'))
+        self.assertTrue(p.head_scripts, 'no <script> in <head>')
+        self.assertEqual(p.head_scripts[0], (SDK_URLS['playgama'], False, False))
+        self.assertEqual(sum(1 for s in parse(self.html('playgama')).scripts if s[0] == SDK_URLS['playgama']), 1)
+        self.assertEqual(p.head_scripts[1][0], 'i18n.js')
+        print('PASS playgama: first <head> script is ' + SDK_URLS['playgama'] + ' (no async, no defer), then i18n.js')
+        for portal in PORTALS:
+            if portal == 'playgama':
+                continue
+            q = HeadScripts()
+            q.feed(self.html(portal))
+            self.assertEqual(q.head_scripts[0][0], 'i18n.js', portal)
 
     def test_03_buildconfig(self):
         for portal in PORTALS:
