@@ -8,11 +8,11 @@ backend file under `platform/backends/`:
 |---|---|---|
 | `local.js` | `local` | default; localStorage storage, no ads; also exposes `LOCAL_PLATFORM_BACKEND` |
 | `itch.js` | `itch` | ported (TASK-856), self-contained: init `{environment: 'itch', language}` from `navigator.language`, localStorage saves (in-memory fallback), no ads (going back is free), `onPause` on window blur/focus and `visibilitychange`; the game pauses and mutes (`GAME_AUDIO` reason `host`) while paused; tested in an itch.io-like sandboxed 960x540 iframe by tools/test_itch_backend.py |
-| `gamepix.js` | `gamepix` | stub, behaves like local; rewarded ads (isRewardedSupported/showRewarded) use `window.GamePix.ads.reward` when present |
+| `gamepix.js` | `gamepix` | ported (TASK-857), self-contained: `lifecycle.loading(n)` non-decreasing 0..100, `lifecycle.loaded()` once on `gameReady` (and before any ad call), `lifecycle.gameStart()` once on the first `gameplayStart` after `loaded()`; `events.on('pause'\|'resume')` -> onPause/onAudio (the game pauses and mutes, `GAME_AUDIO` reason `host`); interstitial (`ads.interstitial()`) refused while a run is in play, one in flight, min gap; rewarded via `ads.reward()`; every SDK call guarded with timeouts (`adOpenTimeoutMs` 3 s without a GamePix pause, `adResumeGraceMs` 2 s after the ad's resume, `adPlayingTimeoutMs` 120 s, `loadedTimeoutMs` 3 s); localStorage saves with in-memory fallback; tested by tools/test_gamepix_backend.py (fake SDK recorder + real SDK smoke) |
 | `y8.js` | `y8` | stub, behaves like local; rewarded ads (isRewardedSupported/showRewarded) use `window.y8.sdk().showAd({type: 'reward'})` when present |
 | `playgama.js` | `playgama` | stub, behaves like local; rewarded ads (isRewardedSupported/showRewarded) use `window.bridge.advertisement` when present |
 
-Each unported portal stub (gamepix, y8, playgama) calls `LOCAL_PLATFORM_BACKEND` for every inner method (so the
+Each unported portal stub (y8, playgama) calls `LOCAL_PLATFORM_BACKEND` for every inner method (so the
 storage code exists once) and carries a `// REPLACE: <SDK call>` line plus the
 portal docs URL above every inner method. Porting = replacing those bodies in
 that ONE file; platform.js and the game do not change.
@@ -59,16 +59,16 @@ after `local.js` (kept: the stubs build on `LOCAL_PLATFORM_BACKEND`); keeps
 |---|---|---|---|---|
 | `now` | `performance.now()` | `performance.now()` | `performance.now()` | `performance.now()` |
 | `init` | resolve `{environment:'itch', language}` | `GamePix.lang()` (sync tag) | `await y8sdk.ready; sdk.init({appId, autoLogin:false}, {gameId})` | `await bridge.initialize()`; `bridge.platform.id`, `bridge.platform.language` |
-| `isInterstitialSupported` | `false` | `!!window.GamePix` | `!!sdk && !sdk.isBlacklisted()` | `bridge.advertisement.isInterstitialSupported` |
+| `isInterstitialSupported` | `false` | `typeof GamePix.ads.interstitial === 'function'` | `!!sdk && !sdk.isBlacklisted()` | `bridge.advertisement.isInterstitialSupported` |
 | `isInterstitialDue` | `false` | own min-gap check | own min-gap check | own min-gap check (`setMinimumDelayBetweenInterstitial`) |
-| `showInterstitial` | `'skipped'` | `GamePix.ads.interstitial()` -> `{success}` | `sdk.showAd({type:'next'})` | `bridge.advertisement.showInterstitial(placement)` + `INTERSTITIAL_STATE_CHANGED` |
+| `showInterstitial` | `'skipped'` | `GamePix.ads.interstitial()` -> `{success}`: `'closed'` / `'failed'`; `'skipped'` while a run is in play | `sdk.showAd({type:'next'})` | `bridge.advertisement.showInterstitial(placement)` + `INTERSTITIAL_STATE_CHANGED` |
 | `sendMessage` | - | - | - | `bridge.platform.sendMessage(message)` |
 | `sendLifecycle` | - | - | - | `bridge.platform.sendMessage(name, data)` |
 | `track` | - (GameAnalytics allowed) | - (**no third-party analytics**) | - (GameAnalytics allowed) | `bridge.analytics.send(event, data)` (**no external analytics**) |
 | `startup` | - (GameAnalytics progression allowed) | - | - (GameAnalytics allowed) | `bridge.analytics.send('startup_funnel', ...)` |
 | `gameReady` | - | `GamePix.lifecycle.loaded()` | - | `bridge.platform.sendMessage('game_ready')` |
 | `readiness` | `{state:'local'}` | `{state: 'success'\|'disabled'}` | `{state: 'success'\|'disabled'}` | `{state: 'success'\|'disabled'}` |
-| `isAudioEnabled` | `true` | `true` (mute via pause event) | `!document.hidden` | `bridge.platform.isAudioEnabled` |
+| `isAudioEnabled` | `true` | `false` while a GamePix `pause` holds (mute via pause event) | `!document.hidden` | `bridge.platform.isAudioEnabled` |
 | `onPause` | window blur/focus | `GamePix.events.on('pause'\|'resume')` | window blur/focus | `bridge.platform.on(PAUSE_STATE_CHANGED)` |
 | `onAudio` | - | `GamePix.events.on('pause'\|'resume')` | window blur/focus | `bridge.platform.on(AUDIO_STATE_CHANGED)` |
 | `onAdState` | - | wrap `ads.interstitial()/reward()` | wrap `sdk.showAd()` | `bridge.advertisement.on(INTERSTITIAL_/REWARDED_STATE_CHANGED)` |
@@ -102,15 +102,15 @@ keeps falling; every other result goes back.
 |---|---|---|---|
 | local | free | `false` | `'unavailable'` |
 | itch.io | free (no ad SDK) | `false` | `'unavailable'` |
-| GamePix | rewarded when `GamePix.ads.reward` exists, else free | `typeof GamePix.ads.reward === 'function'` | `{success: true}` -> `'rewarded'`; `{success: false}` (closed early, no fill) -> `'closed'`; throw / rejection -> `'failed'` |
+| GamePix | rewarded when `GamePix.ads.reward` exists, else free | `typeof GamePix.ads.reward === 'function'` | `{success: true}` -> `'rewarded'`; `{success: false}` (closed early, no fill) -> `'closed'`; throw / rejection / never settles (timeouts above) / another ad up -> `'failed'`; no `reward()` -> `'unavailable'` |
 | Y8 | rewarded when `window.y8.sdk()` exists, else free | SDK object exists | `showAd({type: 'reward', name: placement})`, settled on `afterAd` / `adBreakDone`: `adViewed` fired -> `'rewarded'`; `adDismissed` (or breakStatus `dismissed`) -> `'closed'`; no ad (noAdPreloaded, frequencyCapped, timeout, error, ...), throw / rejection -> `'failed'` |
 | Playgama | rewarded when `bridge.advertisement.isRewardedSupported`, else free | `bridge.advertisement.isRewardedSupported === true` | REWARDED_STATE_CHANGED: `'rewarded'` then `'closed'` -> `'rewarded'`; `'closed'` alone -> `'closed'`; `'failed'`, throw / rejection -> `'failed'` |
 
 Go-back outcome per result: `'rewarded'`, `'failed'`, `'unavailable'`, any
 other value and the 30 s timeout -> go back; `'closed'` -> keep falling.
-Without its SDK each portal backend falls back to the local stub (`false` /
+Without its SDK each portal backend returns the local results (`false` /
 `'unavailable'`, free). Tests: tools/test_rewarded_backends.py (GamePix, Y8,
-itch.io), tools/test_playgama_rewarded.py, tools/test_go_back_ad.py.
+itch.io), tools/test_gamepix_backend.py, tools/test_playgama_rewarded.py, tools/test_go_back_ad.py.
 
 ## Publication must-haves per portal
 

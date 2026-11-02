@@ -1,259 +1,578 @@
-// GamePix platform backend stub.
-// GamePix SDK v3 (window.GamePix). GamePix.lifecycle.loaded() must run before
-// any ad call. NO third-party analytics (no GameAnalytics) on GamePix.
+// GamePix platform backend (ported, TASK-857). GamePix SDK v3 (window.GamePix).
 // Docs: https://partners.gamepix.com/sdk/doc/javascript
 // Script tag: <script src="https://integration.gamepix.com/sdk/v3/gamepix.sdk.js"></script> (synchronous, before platform/backends/gamepix.js)
-// For now every inner method behaves like local.js (localStorage storage,
-// no-op ads/lifecycle/leaderboards) by calling LOCAL_PLATFORM_BACKEND, which
-// must be loaded first; to port, replace each body with its REPLACE line.
-// See docs/platform-sdk.md.
+// NO third-party analytics (no GameAnalytics) on GamePix: track/startup are no-ops.
+// Self-contained: it does not call LOCAL_PLATFORM_BACKEND (local.js still
+// loads first in a build, see docs/platform-sdk.md, but nothing here uses it).
+// - lifecycle: GamePix.lifecycle.loading(n) with n 0..100, never decreasing;
+//   gameReady() sends loading(100) (if not sent) then lifecycle.loaded() once;
+//   lifecycle.gameStart() once, on the first gameplayStart, after loaded()
+//   (a gameplayStart before gameReady waits for it). Every ad call first
+//   makes sure loaded() went out.
+// - pause: GamePix.events.on('pause') -> onPause fn(true) and onAudio fn(false);
+//   'resume' -> fn(false) / fn(true). Repeated events are folded.
+// - ads: interstitial only while no run is in play (gameplayStart without a
+//   gameplayStop -> 'skipped'), at most one in flight, min gap
+//   PLATFORM.interstitialMinGapMs; rewarded via GamePix.ads.reward().
+//   {success: true} -> 'closed' (interstitial) / 'rewarded'; anything else,
+//   a throw or a rejection -> 'failed'. A call that never settles: 'failed'
+//   after adOpenTimeoutMs without a GamePix 'pause', after adResumeGraceMs
+//   past the 'resume' that ends the ad, or after adPlayingTimeoutMs. A pause
+//   the ad caused is lifted (fn(false)) before the result resolves.
+// - saves: plain localStorage, in-memory fallback when storage is blocked.
+// Every SDK call is guarded: a missing SDK, a throw or a promise that never
+// settles never blocks the game and never leaves an unhandled rejection.
 var PLATFORM_BACKEND = (function()
 {
-    const base = LOCAL_PLATFORM_BACKEND
+    const memory = new Map()
+    const listeners = {pause: [], audio: [], adState: []}
+    const warnedCalls = new Set()
+    let language = null
+    let storageWarned = false
+    let subscribed = false
+    // Last pause state told to the listeners (GamePix may repeat events)
+    let paused = false
+    // Lifecycle
+    let loadingSent = -1
+    let loadedPromise = null
+    let started = false
+    let startWanted = false
+    // A run is in play (gameplayStart without gameplayStop)
+    let playing = false
+    // Ads: the one ad in progress {pausedByAd, onPause(isPaused)} or null;
+    // interstitialInFlight stays true until the SDK promise itself settles
+    let currentAd = null
+    let interstitialInFlight = false
+    let lastInterstitialAt = -Infinity
 
-    // GamePix.ads.reward bound to GamePix.ads, or null without the SDK
-    function rewardAd()
+    function sdk()
     {
-        const gamePix = typeof window === 'undefined' ? undefined : window.GamePix
-        const ads = gamePix && gamePix.ads
-        return ads && typeof ads.reward === 'function' ? ads.reward.bind(ads) : null
+        try
+        {
+            return typeof window !== 'undefined' && window.GamePix || null
+        }
+        catch (e)
+        {
+            return null
+        }
     }
 
-    return {
-        platformId: 'gamepix',
+    function warnOnce(name, e)
+    {
+        if (warnedCalls.has(name))
+            return
+        warnedCalls.add(name)
+        console.warn('GamePix ' + name + ' failed:', e && e.message || e)
+    }
 
-        // REPLACE: nothing: performance.now()
-        // https://partners.gamepix.com/sdk/doc/javascript
-        now()
+    // Calls fn(GamePix); returns fallback without the SDK or on a throw
+    function call(name, fn, fallback)
+    {
+        const gamePix = sdk()
+        if (!gamePix)
+            return fallback
+        try
         {
-            return base.now()
-        },
+            return fn(gamePix)
+        }
+        catch (e)
+        {
+            warnOnce(name, e)
+            return fallback
+        }
+    }
 
-        // REPLACE: nothing to await (sync tag); resolve {environment: 'gamepix', language: GamePix.lang()}
-        // https://partners.gamepix.com/sdk/doc/javascript
-        init()
+    // The SDK function at path ('ads.reward') bound to its owner, or null
+    function sdkFunction(path)
+    {
+        return call(path, gamePix =>
         {
-            return base.init()
-        },
+            let owner = null
+            let value = gamePix
+            for (const part of path.split('.'))
+            {
+                owner = value
+                value = value == null ? undefined : value[part]
+            }
+            return typeof value === 'function' ? value.bind(owner) : null
+        }, null)
+    }
 
-        // REPLACE: return !!window.GamePix (GamePix.ads.interstitial exists)
-        // https://partners.gamepix.com/sdk/doc/javascript
-        isInterstitialSupported()
+    // A promise for a possibly-thenable value that never rejects and settles
+    // within ms (then resolves timeoutValue)
+    function settle(name, value, ms, timeoutValue)
+    {
+        return new Promise(resolve =>
         {
-            return base.isInterstitialSupported()
-        },
+            const timer = setTimeout(() => resolve(timeoutValue), ms)
+            Promise.resolve(value).then(result =>
+            {
+                clearTimeout(timer)
+                resolve(result)
+            }, e =>
+            {
+                warnOnce(name, e)
+                clearTimeout(timer)
+                resolve(timeoutValue)
+            })
+        })
+    }
 
-        // REPLACE: nothing: own min-gap check; GamePix paces ads itself
-        // https://partners.gamepix.com/sdk/doc/javascript
-        isInterstitialDue(...args)
+    function emit(name, value)
+    {
+        for (const fn of listeners[name].slice())
         {
-            return base.isInterstitialDue(...args)
-        },
-
-        // REPLACE: await GamePix.ads.interstitial() -> {success}; resolve 'closed' | 'failed'
-        // https://partners.gamepix.com/sdk/doc/javascript
-        showInterstitial(...args)
-        {
-            return base.showInterstitial(...args)
-        },
-
-        // REPLACE: nothing
-        // https://partners.gamepix.com/sdk/doc/javascript
-        sendMessage(...args)
-        {
-            return base.sendMessage(...args)
-        },
-
-        // REPLACE: nothing
-        // https://partners.gamepix.com/sdk/doc/javascript
-        sendLifecycle(...args)
-        {
-            return base.sendLifecycle(...args)
-        },
-
-        // REPLACE: nothing: third-party analytics are banned on GamePix
-        // https://partners.gamepix.com/sdk/doc/javascript
-        track(...args)
-        {
-            return base.track(...args)
-        },
-
-        // REPLACE: nothing: third-party analytics are banned on GamePix
-        // https://partners.gamepix.com/sdk/doc/javascript
-        startup(...args)
-        {
-            return base.startup(...args)
-        },
-
-        // REPLACE: GamePix.lifecycle.loaded()  (before any ad call)
-        // https://partners.gamepix.com/sdk/doc/javascript
-        gameReady()
-        {
-            return base.gameReady()
-        },
-
-        // REPLACE: nothing: return {state: window.GamePix ? 'success' : 'disabled'}
-        // https://partners.gamepix.com/sdk/doc/javascript
-        readiness()
-        {
-            return base.readiness()
-        },
-
-        // REPLACE: nothing: return true (mute comes through the pause event)
-        // https://partners.gamepix.com/sdk/doc/javascript
-        isAudioEnabled()
-        {
-            return base.isAudioEnabled()
-        },
-
-        // REPLACE: GamePix.events.on('pause', () => fn(true)); GamePix.events.on('resume', () => fn(false))
-        // https://partners.gamepix.com/sdk/doc/javascript
-        onPause(fn)
-        {
-            return base.onPause(fn)
-        },
-
-        // REPLACE: GamePix.events.on('pause'/'resume') -> fn(false/true)
-        // https://partners.gamepix.com/sdk/doc/javascript
-        onAudio(fn)
-        {
-            return base.onAudio(fn)
-        },
-
-        // REPLACE: wrap GamePix.ads.interstitial()/reward(): fn('opened') before, fn('closed'|'failed') after
-        // https://partners.gamepix.com/sdk/doc/javascript
-        onAdState(fn)
-        {
-            return base.onAdState(fn)
-        },
-
-        // REPLACE: GamePix.lifecycle.loading(percent)  (0..100, never decreasing)
-        // https://partners.gamepix.com/sdk/doc/javascript
-        loadingProgress(percent)
-        {
-            return base.loadingProgress(percent)
-        },
-
-        // REPLACE: GamePix.lifecycle.gameStart()
-        // https://partners.gamepix.com/sdk/doc/javascript
-        gameplayStart(level)
-        {
-            return base.gameplayStart(level)
-        },
-
-        // REPLACE: nothing: v3 has no gameplay-stop call
-        // https://partners.gamepix.com/sdk/doc/javascript
-        gameplayStop(reason, level)
-        {
-            return base.gameplayStop(reason, level)
-        },
-
-        // REPLACE: GamePix.happyMoment()
-        // https://partners.gamepix.com/sdk/doc/javascript
-        happyMoment()
-        {
-            return base.happyMoment()
-        },
-
-        // True when the GamePix SDK has GamePix.ads.reward()
-        // https://partners.gamepix.com/sdk/doc/javascript
-        isRewardedSupported()
-        {
-            return rewardAd() ? true : base.isRewardedSupported()
-        },
-
-        // GamePix.ads.reward() -> {success}: success -> 'rewarded', no
-        // success (closed early, no fill) -> 'closed'; a throw or a rejected
-        // promise -> 'failed'.
-        // https://partners.gamepix.com/sdk/doc/javascript
-        showRewarded(placement)
-        {
-            const reward = rewardAd()
-            if (!reward)
-                return base.showRewarded(placement)
             try
             {
-                return Promise.resolve(reward()).then(
-                    response => response && response.success === true ? 'rewarded' : 'closed',
-                    () => 'failed')
+                fn(value)
             }
             catch (e)
             {
-                return Promise.resolve('failed')
+                console.warn('GamePix ' + name + ' listener failed:', e && e.message || e)
             }
-        },
+        }
+    }
 
-        // REPLACE: nothing: GamePix owns banner placement
-        // https://partners.gamepix.com/sdk/doc/javascript
-        showBanner(position)
+    function setPaused(isPaused)
+    {
+        if (isPaused === paused)
+            return
+        paused = isPaused
+        emit('pause', isPaused)
+        emit('audio', !isPaused)
+    }
+
+    function onSdkPause(isPaused)
+    {
+        if (currentAd)
+            currentAd.onPause(isPaused)
+        setPaused(isPaused)
+    }
+
+    // GamePix.events.on('pause' | 'resume'), once
+    function subscribe()
+    {
+        if (subscribed)
+            return
+        const on = sdkFunction('events.on')
+        if (!on)
+            return
+        subscribed = true
+        call('events.on', () =>
         {
-            return base.showBanner(position)
+            on('pause', () => onSdkPause(true))
+            on('resume', () => onSdkPause(false))
+        })
+    }
+
+    function isoLanguage(value)
+    {
+        const code = String(value || '').slice(0, 2).toLowerCase()
+        return /^[a-z]{2}$/.test(code) ? code : null
+    }
+
+    function navigatorLanguage()
+    {
+        try
+        {
+            return navigator.language
+        }
+        catch (e)
+        {
+            return null
+        }
+    }
+
+    function sendLoading(pct)
+    {
+        const n = Math.min(100, Math.max(0, Math.floor(Number(pct)) || 0))
+        if (n <= loadingSent)
+            return
+        loadingSent = n
+        const loading = sdkFunction('lifecycle.loading')
+        if (loading)
+            call('lifecycle.loading', () => loading(n))
+    }
+
+    function sendGameStart()
+    {
+        if (started)
+            return
+        started = true
+        const gameStart = sdkFunction('lifecycle.gameStart')
+        if (gameStart)
+            call('lifecycle.gameStart', () => gameStart())
+    }
+
+    // loading(100) then lifecycle.loaded(), once; resolves within loadedTimeoutMs
+    function ensureLoaded()
+    {
+        if (!loadedPromise)
+        {
+            sendLoading(100)
+            const loaded = sdkFunction('lifecycle.loaded')
+            const result = loaded ? call('lifecycle.loaded', () => loaded()) : undefined
+            loadedPromise = settle('lifecycle.loaded', result, BACKEND.loadedTimeoutMs).then(() => undefined)
+            if (startWanted)
+                sendGameStart()
+        }
+        return loadedPromise
+    }
+
+    function interstitialMinGapMs()
+    {
+        return typeof PLATFORM !== 'undefined' && Number.isFinite(PLATFORM.interstitialMinGapMs) ?
+            PLATFORM.interstitialMinGapMs : 120000
+    }
+
+    // Shows the ad sdkCall() starts and resolves mapResponse(response), or
+    // 'failed' on a throw, a rejection or a timeout. Emits adState 'opened'
+    // before the call and 'closed' | 'failed' after; a pause the ad caused
+    // is lifted before the result resolves. onSettled runs when the SDK
+    // promise itself settles (even after a timeout).
+    function runAd(name, sdkCall, mapResponse, onSettled)
+    {
+        return new Promise(resolve =>
+        {
+            let finished = false
+            let graceTimer = null
+            const ad = {
+                pausedByAd: false,
+                onPause(isPaused)
+                {
+                    if (isPaused)
+                    {
+                        ad.pausedByAd = true
+                        clearTimeout(openTimer)
+                        clearTimeout(graceTimer)
+                    }
+                    else if (ad.pausedByAd)
+                    {
+                        clearTimeout(graceTimer)
+                        graceTimer = setTimeout(() => finish('failed'), BACKEND.adResumeGraceMs)
+                    }
+                }
+            }
+            function finish(result)
+            {
+                if (finished)
+                    return
+                finished = true
+                clearTimeout(openTimer)
+                clearTimeout(playTimer)
+                clearTimeout(graceTimer)
+                if (currentAd === ad)
+                    currentAd = null
+                if (ad.pausedByAd)
+                    setPaused(false)
+                emit('adState', result === 'failed' ? 'failed' : 'closed')
+                resolve(result)
+            }
+            const openTimer = setTimeout(() => finish('failed'), BACKEND.adOpenTimeoutMs)
+            const playTimer = setTimeout(() => finish('failed'), BACKEND.adPlayingTimeoutMs)
+            currentAd = ad
+            emit('adState', 'opened')
+            let request
+            try
+            {
+                request = Promise.resolve(sdkCall())
+            }
+            catch (e)
+            {
+                request = Promise.reject(e)
+            }
+            request.then(response => mapResponse(response), e =>
+            {
+                warnOnce(name, e)
+                return 'failed'
+            }).then(result =>
+            {
+                if (onSettled)
+                    onSettled()
+                finish(result)
+            })
+        })
+    }
+
+    function localStore()
+    {
+        try
+        {
+            return window.localStorage || null
+        }
+        catch (e)
+        {
+            storageWarn('access failed', e)
+            return null
+        }
+    }
+
+    function storageWarn(message, e)
+    {
+        if (storageWarned)
+            return
+        storageWarned = true
+        console.warn('localStorage unavailable, keeping progress in memory:', message, e && e.message)
+    }
+
+    function localGet(key)
+    {
+        const local = localStore()
+        if (local)
+        {
+            try
+            {
+                const value = local.getItem(key)
+                if (value !== null && value !== undefined)
+                    return String(value)
+            }
+            catch (e)
+            {
+                storageWarn('read failed', e)
+            }
+        }
+        return memory.has(key) ? memory.get(key) : null
+    }
+
+    function localSet(key, value)
+    {
+        memory.set(key, value)
+        const local = localStore()
+        if (!local)
+            return
+        try
+        {
+            local.setItem(key, value)
+        }
+        catch (e)
+        {
+            storageWarn('write failed', e)
+        }
+    }
+
+    const BACKEND = {
+        platformId: 'gamepix',
+
+        // Timeouts (ms) for SDK promises that never settle
+        loadedTimeoutMs: 3000,
+        adOpenTimeoutMs: 3000,
+        adResumeGraceMs: 2000,
+        adPlayingTimeoutMs: 120000,
+
+        now()
+        {
+            return performance.now()
         },
 
-        // REPLACE: nothing
-        // https://partners.gamepix.com/sdk/doc/javascript
+        // The SDK tag is synchronous: window.GamePix exists now or never
+        init()
+        {
+            subscribe()
+            language = isoLanguage(call('lang', gamePix => gamePix.lang(), null)) ||
+                isoLanguage(navigatorLanguage()) || 'en'
+            if (!sdk())
+                console.warn('GamePix SDK missing: playing without it')
+            return Promise.resolve({environment: sdk() ? 'gamepix' : 'disabled', language})
+        },
+
+        isInterstitialSupported()
+        {
+            return !!sdkFunction('ads.interstitial')
+        },
+
+        // GamePix paces ads itself; this adds a min gap and one ad at a time
+        isInterstitialDue()
+        {
+            return BACKEND.isInterstitialSupported() && !interstitialInFlight && !currentAd &&
+                performance.now() - lastInterstitialAt >= interstitialMinGapMs()
+        },
+
+        // Resolves 'closed' (shown), 'failed' or 'skipped' (no SDK, a run in
+        // play, another ad up or one still in flight). Never rejects.
+        showInterstitial()
+        {
+            const interstitial = sdkFunction('ads.interstitial')
+            if (!interstitial || playing || interstitialInFlight || currentAd)
+                return Promise.resolve('skipped')
+            ensureLoaded()
+            lastInterstitialAt = performance.now()
+            interstitialInFlight = true
+            return runAd('ads.interstitial', () => interstitial(),
+                response => response && response.success === true ? 'closed' : 'failed',
+                () => { interstitialInFlight = false })
+        },
+
+        sendMessage()
+        {
+            return Promise.resolve()
+        },
+
+        sendLifecycle()
+        {
+            return Promise.resolve()
+        },
+
+        // Third-party analytics are banned on GamePix
+        track()
+        {
+        },
+
+        startup()
+        {
+        },
+
+        // The first playable frame: loading(100), then lifecycle.loaded() once
+        gameReady()
+        {
+            return ensureLoaded()
+        },
+
+        readiness()
+        {
+            return {state: sdk() ? 'success' : 'disabled'}
+        },
+
+        // Mute comes through the pause event
+        isAudioEnabled()
+        {
+            return !paused
+        },
+
+        onPause(fn)
+        {
+            if (typeof fn !== 'function')
+                return
+            subscribe()
+            listeners.pause.push(fn)
+        },
+
+        onAudio(fn)
+        {
+            if (typeof fn !== 'function')
+                return
+            subscribe()
+            listeners.audio.push(fn)
+        },
+
+        onAdState(fn)
+        {
+            if (typeof fn === 'function')
+                listeners.adState.push(fn)
+        },
+
+        // GamePix.lifecycle.loading(percent): 0..100, never decreasing
+        loadingProgress(percent)
+        {
+            sendLoading(percent)
+        },
+
+        // GamePix.lifecycle.gameStart() once, after lifecycle.loaded()
+        gameplayStart()
+        {
+            playing = true
+            startWanted = true
+            if (loadedPromise)
+                sendGameStart()
+        },
+
+        // v3 has no gameplay-stop call; ends the in-play state
+        gameplayStop()
+        {
+            playing = false
+        },
+
+        happyMoment()
+        {
+            const happyMoment = sdkFunction('happyMoment')
+            if (happyMoment)
+                call('happyMoment', () => happyMoment())
+        },
+
+        // True when the GamePix SDK has GamePix.ads.reward()
+        isRewardedSupported()
+        {
+            return !!sdkFunction('ads.reward')
+        },
+
+        // GamePix.ads.reward() -> {success}: success -> 'rewarded', no
+        // success (closed early, no fill) -> 'closed'; a throw, a rejection
+        // or a timeout -> 'failed'; no SDK -> 'unavailable'; another ad up
+        // -> 'failed'.
+        showRewarded()
+        {
+            const reward = sdkFunction('ads.reward')
+            if (!reward)
+                return Promise.resolve('unavailable')
+            if (currentAd)
+                return Promise.resolve('failed')
+            ensureLoaded()
+            return runAd('ads.reward', () => reward(),
+                response => response && response.success === true ? 'rewarded' : 'closed')
+        },
+
+        // GamePix owns banner placement
+        showBanner()
+        {
+            return Promise.resolve()
+        },
+
         hideBanner()
         {
-            return base.hideBanner()
+            return Promise.resolve()
         },
 
-        // REPLACE: nothing: no leaderboard in GamePix v3, resolve false
-        // https://partners.gamepix.com/sdk/doc/javascript
-        submitScore(board, value)
+        // No leaderboards or achievements in GamePix v3
+        submitScore()
         {
-            return base.submitScore(board, value)
+            return Promise.resolve(false)
         },
 
-        // REPLACE: nothing: resolve false
-        // https://partners.gamepix.com/sdk/doc/javascript
-        unlockAchievement(id)
+        unlockAchievement()
         {
-            return base.unlockAchievement(id)
+            return Promise.resolve(false)
         },
 
-        // REPLACE: GamePix.lang()
-        // https://partners.gamepix.com/sdk/doc/javascript
+        // GamePix.lang(), read by init()
         getLanguage()
         {
-            return base.getLanguage()
+            return language
         },
 
-        // REPLACE: nothing: 'gamepix'
-        // https://partners.gamepix.com/sdk/doc/javascript
         getPlatformId()
         {
-            return this.platformId
+            return BACKEND.platformId
         },
 
         storage:
         {
-            // REPLACE: nothing: return true
-            // https://partners.gamepix.com/sdk/doc/javascript
+            // localStorage is read in full at boot
             remoteKnown()
             {
-                return base.storage.remoteKnown()
+                return true
             },
 
-            // REPLACE: nothing
-            // https://partners.gamepix.com/sdk/doc/javascript
-            onRecovery(fn)
+            // No late remote read to reconcile
+            onRecovery()
             {
-                return base.storage.onRecovery(fn)
             },
 
-            // REPLACE: localStorage.getItem(key) for each key (plain localStorage on GamePix)
-            // https://partners.gamepix.com/sdk/doc/javascript
-            getMany(keys)
+            // Resolves {key: string | null} from localStorage
+            async getMany(keys)
             {
-                return base.storage.getMany(keys)
+                const result = {}
+                for (const key of keys)
+                    result[key] = localGet(String(key))
+                return result
             },
 
-            // REPLACE: localStorage.setItem(key, value) for each key
-            // https://partners.gamepix.com/sdk/doc/javascript
-            setMany(obj)
+            // Saves {key: value} as strings in localStorage; true once written
+            async setMany(obj)
             {
-                return base.storage.setMany(obj)
+                for (const key of Object.keys(obj))
+                    localSet(String(key), String(obj[key]))
+                return true
             }
         }
     }
+    return BACKEND
 })()
