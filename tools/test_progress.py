@@ -25,9 +25,12 @@ TIME_KEY = 'grapnelninja.time'
 # order (progress.js), so sets are compared as key sets. TASK-457 added the
 # Grapple Over climb save to the one boot get; it is written on its own
 # (climb-only sets) beside the untouched classic/bad snapshot keys.
+# TASK-873: the play time totals (telemetry.js) are a snapshot key too.
 CLIMB_KEY = 'grapnelninja.grappleOver'
-SAVE_KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang', 'grapnelninja.tutorialDone']
-KEYS = SAVE_KEYS + [CLIMB_KEY]
+PLAYTIME_KEY = 'grapnelninja_playtime_v1'
+BASE_KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang', 'grapnelninja.tutorialDone']
+SAVE_KEYS = BASE_KEYS + [PLAYTIME_KEY]
+KEYS = BASE_KEYS + [CLIMB_KEY, PLAYTIME_KEY]
 READY = ('PLATFORM.environment !== "pending" && bootComplete && runInProgress'
          ' && document.getElementById("loading").hidden')
 FREEZE = '''() => {

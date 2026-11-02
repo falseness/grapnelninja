@@ -99,6 +99,10 @@ const TELEMETRY = (() =>
         sendEnvironment: () => session.sendEnvironment(),
         classify: info => session.classify(info),
         flushPlayTime: () => session.flushPlayTime(),
+        // PROGRESS: stored totals in, the totals to write out
+        loadPlayTime: json => session.loadTotals(json),
+        playTimeJson: () => session.savedTotals(),
+        updatePlayTime: () => session.updateTotals(),
         playTime: () => session.playTime(),
         // pagehide: design('quit:<type>:<sectionId>') once per page
         sendQuit()
@@ -118,11 +122,11 @@ const TELEMETRY = (() =>
 // Per frame (TELEMETRY.frame, active play only): one histogram increment and
 // a few additions, no allocation. Every PERF_WINDOW_MS of active play: the
 // perf:* events and the play time events; pagehide: the play time events.
-// Total play time per grapnel mode is kept in localStorage (PLAYTIME_KEY).
+// Total play time per grapnel mode is saved by PROGRESS through
+// PLATFORM.storage (key grapnelninja_playtime_v1, read in the one boot get).
 function createSession()
 {
     const PERF_WINDOW_MS = 60000
-    const PLAYTIME_KEY = 'grapnelninja_playtime_v1'
     const MODES = ['single', 'double']
     // Frame-time histogram: BIN_MS bins up to MAX_MS, the last bin overflows
     const BIN_MS = 0.1, MAX_MS = 250, FREEZE_MS = 250
@@ -131,30 +135,34 @@ function createSession()
     const bins = new Uint32Array(Math.round(MAX_MS / BIN_MS) + 1)
     let windowFrames = 0, windowMs = 0, freezes = 0, envSent = false
     const sessionMs = {single: 0, double: 0}
-    const baseMs = loadTotals()
+    const baseMs = {single: 0, double: 0}
 
-    function loadTotals()
+    // Rounded totals as last handed to PROGRESS (its snapshot reads them)
+    let savedTotals = JSON.stringify(baseMs)
+
+    // PROGRESS.load / recovery: the stored totals JSON (null when none); a
+    // later or recovered read never lowers a total
+    function loadTotals(json)
     {
-        const totals = {single: 0, double: 0}
-        try
-        {
-            const saved = JSON.parse(localStorage.getItem(PLAYTIME_KEY) || '{}')
-            for (const mode of MODES)
-                if (typeof saved[mode] === 'number' && isFinite(saved[mode]) && saved[mode] > 0)
-                    totals[mode] = saved[mode]
-        }
-        catch (e) {}
-        return totals
+        let saved = {}
+        try { saved = JSON.parse(json || '{}') || {} } catch (e) {}
+        for (const mode of MODES)
+            if (typeof saved[mode] === 'number' && isFinite(saved[mode]) && saved[mode] > baseMs[mode])
+                baseMs[mode] = saved[mode]
+        savedTotals = currentTotals()
     }
+    function currentTotals()
+    {
+        const totals = {}
+        for (const mode of MODES) totals[mode] = Math.round(baseMs[mode] + sessionMs[mode])
+        return JSON.stringify(totals)
+    }
+    // The totals go out in PROGRESS's next setMany (never per frame: every
+    // PERF_WINDOW_MS of play and on pagehide)
     function saveTotals()
     {
-        try
-        {
-            const totals = {}
-            for (const mode of MODES) totals[mode] = Math.round(baseMs[mode] + sessionMs[mode])
-            localStorage.setItem(PLAYTIME_KEY, JSON.stringify(totals))
-        }
-        catch (e) {}
+        savedTotals = currentTotals()
+        try { PROGRESS.save() } catch (e) {}
     }
     const clamp = (value, max) => Math.max(0, Math.min(max, value))
     // The histogram value below which `p` of the window's frames fall
@@ -283,6 +291,9 @@ function createSession()
         },
         classify,
         flushPlayTime,
+        loadTotals,
+        savedTotals: () => savedTotals,
+        updateTotals() { savedTotals = currentTotals() },
         // ms, for tests: {session: {single, double}, total: {single, double}}
         playTime: () => ({session: {...sessionMs},
             total: {single: baseMs.single + sessionMs.single, double: baseMs.double + sessionMs.double}})

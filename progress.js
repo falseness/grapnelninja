@@ -63,6 +63,8 @@ const PROGRESS = (function()
     const timeKey = 'grapnelninja.time'
     const langKey = 'grapnelninja.lang'
     const tutorialKey = 'grapnelninja.tutorialDone'
+    // Play time totals per grapnel mode (TELEMETRY owns the values)
+    const playTimeKey = 'grapnelninja_playtime_v1'
     const state = {time: 0, lang: null, tutorialDone: false}
     let loaded = false, known = false, baseTime = 0, langChanged = false
     let savedJson = null, saveTimer = null, writing = false, lastSaveAt = -Infinity
@@ -76,7 +78,8 @@ const PROGRESS = (function()
         return {
             [recordsKey]: JSON.stringify({classic: scoreText.record.classic, bad: scoreText.record.bad}),
             [tutorialKey]: String(state.tutorialDone),
-            [timeKey]: String(state.time), [langKey]: state.lang || ''
+            [timeKey]: String(state.time), [langKey]: state.lang || '',
+            [playTimeKey]: TELEMETRY.playTimeJson()
         }
     }
     function refresh()
@@ -88,6 +91,7 @@ const PROGRESS = (function()
     function reconcile(values)
     {
         readClimb(values[climbKey])
+        TELEMETRY.loadPlayTime(values[playTimeKey])
         const records = parse(values[recordsKey])
         state.tutorialDone ||= values[tutorialKey] === 'true'
         const delta = Math.max(0, state.time - baseTime)
@@ -122,10 +126,11 @@ const PROGRESS = (function()
             saveTimer = setTimeout(write, 1000)
     }
     const PROGRESS = {
-        keys: [recordsKey, timeKey, langKey, tutorialKey, climbKey],
+        keys: [recordsKey, timeKey, langKey, tutorialKey, climbKey, playTimeKey],
         load(values)
         {
             readClimb(values[climbKey])
+            TELEMETRY.loadPlayTime(values[playTimeKey])
             const records = parse(values[recordsKey])
             state.tutorialDone = values[tutorialKey] === 'true'
             known = PLATFORM.storage.remoteKnown
@@ -187,6 +192,57 @@ const PROGRESS = (function()
         setLang(lang) { state.lang = lang || null; langChanged = true }
     }
     PLATFORM.storage.onRecovery(values => { if (loaded) reconcile(values) })
-    window.addEventListener('pagehide', () => { PROGRESS.flushClimb(); PROGRESS.flush() })
+    // pagehide: everything unsaved in ONE setMany (the climb, and the
+    // snapshot with the current play time totals; this listener runs before
+    // index.html's TELEMETRY.flushPlayTime). Playgama's bridge refuses a set
+    // while another is pending, and a retry timer never fires after pagehide.
+    let hidden = false
+    function flushAll()
+    {
+        // Like index.html's play time events, once per page: the saved
+        // totals match the playtime:total values reported on this pagehide
+        if (!hidden) TELEMETRY.updatePlayTime()
+        hidden = true
+        const values = {}
+        let climbSent = null, json = null
+        if (climbActive)
+        {
+            climbChanged = true
+            climbJson = JSON.stringify(captureClimbState())
+            clearTimeout(climbTimer)
+            climbTimer = null
+            if (climbJson !== climbSaved) values[climbKey] = climbSent = climbJson
+        }
+        if (loaded && known)
+        {
+            const snap = snapshot()
+            clearTimeout(saveTimer)
+            saveTimer = null
+            if (JSON.stringify(snap) !== savedJson)
+            {
+                Object.assign(values, snap)
+                json = JSON.stringify(snap)
+            }
+        }
+        if (!Object.keys(values).length) return
+        // Optimistic, so a save() later in this pagehide sends nothing again
+        const previous = savedJson, sentTime = state.time, sentLang = state.lang
+        if (json !== null) savedJson = json
+        Promise.resolve(PLATFORM.storage.setMany(values)).then(ok =>
+        {
+            if (!ok)
+            {
+                if (json !== null && savedJson === json) savedJson = previous
+                return
+            }
+            if (climbSent !== null) climbSaved = climbSent
+            if (json !== null)
+            {
+                baseTime = sentTime
+                if (state.lang === sentLang) langChanged = false
+            }
+        }).catch(() => { if (json !== null && savedJson === json) savedJson = previous })
+    }
+    window.addEventListener('pagehide', flushAll)
     return PROGRESS
 })()

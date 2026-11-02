@@ -250,9 +250,12 @@ whole second of total play time:
 | `playtime:session:<single\|double>` | active play seconds this page session, whole seconds (floor), 0..1e8 |
 | `playtime:total:<single\|double>` | active play seconds across sessions, whole seconds (floor), 0..1e8 |
 
-The total is kept in `localStorage['grapnelninja_playtime_v1']`
-(`{"single": ms, "double": ms}`, written at every flush; unreadable storage
--> starts at 0). Rate: 7 events at boot, at most 8 per active minute, at
+The total is saved under the `PROGRESS.keys` key `grapnelninja_playtime_v1`
+(`{"single": ms, "double": ms}`) through `PLATFORM.storage` (Bridge storage on
+Playgama, localStorage elsewhere): read in the one boot `getMany`, written in
+PROGRESS's `setMany` with the other keys after every flush and on pagehide
+(TASK-873; telemetry.js never touches localStorage; unreadable storage ->
+starts at 0). Rate: 7 events at boot, at most 8 per active minute, at
 most 4 on pagehide. Tested by `tools/test_telemetry_session.py` (scripted
 3-minute headless run plus a reload).
 
