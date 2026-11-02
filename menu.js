@@ -131,6 +131,20 @@ function strokeNeonRect(x, y, w, h, color, unit)
 }
 // Centres of rows of the given heights stacked between top and bottom
 // with equal gaps
+// Two lines of about equal width: breaks at the space nearest the middle
+// (ctx.font is the text's font); a text without spaces stays one line
+function splitLine(text, context)
+{
+    let best = null
+    for (let i = text.indexOf(' '); i > 0; i = text.indexOf(' ', i + 1))
+    {
+        const lines = [text.slice(0, i), text.slice(i + 1)]
+        const widest = Math.max(...lines.map(line => context.measureText(line).width))
+        if (!best || widest < best.widest)
+            best = {lines: lines, widest: widest}
+    }
+    return best ? best.lines : [text]
+}
 function stackRows(top, bottom, heights)
 {
     const gap = (bottom - top - heights.reduce((a, b) => a + b, 0)) / (heights.length + 1)
@@ -1289,18 +1303,30 @@ const CLIMB_UI = {
         }
         // Under the toggle: single grapnel is the intended way to play
         // (and under the offer's two choices)
+        // Texts never go under 12 CSS px (phones); a note that does not fit
+        // one line at that size wraps onto two (TASK-863)
+        const minText = 12 * h / getCanvasCssRect().height
         const noteText = I18N.t('climb.grapnelNote')
-        let noteSize = h*0.026
+        let noteSize = h*0.026, noteLines = [noteText]
         ctx.save()
         ctx.font = noteSize + 'px ' + STYLE.ui.fontFamily
         noteSize = Math.min(noteSize, noteSize * w*0.92 / ctx.measureText(noteText).width)
+        if (noteSize < minText)
+        {
+            noteSize = minText
+            ctx.font = noteSize + 'px ' + STYLE.ui.fontFamily
+            noteLines = splitLine(noteText, ctx)
+            const widest = Math.max(...noteLines.map(line => ctx.measureText(line).width))
+            noteSize = Math.max(minText, Math.min(h*0.026, noteSize * w*0.92 / widest))
+        }
         ctx.restore()
         // With the toggle, the title, buttons, note and fps row share the
         // height evenly, so the 44 CSS px touch floor still fits on phones.
         const rows = note ? stackRows(0, h, [h*0.055, h*0.035, ...actions.map(() => bh),
-            noteSize*1.2, ...(grapnel ? [check.hitRect().height] : [])]) : null
+            noteSize*1.2*noteLines.length, ...(grapnel ? [check.hitRect().height] : [])]) : null
         this.text(I18N.t(title), w/2, note ? rows[0] : h*0.16, h*0.055)
-        this.text(I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)}), w/2, note ? rows[1] : h*0.26, h*0.035)
+        this.text(I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)}), w/2, note ? rows[1] : h*0.26,
+            Math.max(h*0.035, minText))
         this.buttons = actions.map(([key, action], i) => new Button(
             {x:w/2, y:note ? rows[2 + i] : h*0.35+i*(bh+h*0.02), width:bw, height:bh, neon:true,
                 clickable:!(this.goingBack && this.goBackAdPending)},
@@ -1322,7 +1348,8 @@ const CLIMB_UI = {
             ctx.restore()
         }
         if (note)
-            new Text({text:noteText, x:w/2, y:rows[2 + actions.length], fontSize:noteSize, fill:STYLE.colors.ui.mutedText}).draw()
+            noteLines.forEach((line, i) => new Text({text:line, fill:STYLE.colors.ui.mutedText, fontSize:noteSize, x:w/2,
+                y:rows[2 + actions.length] + (i - (noteLines.length - 1) / 2) * noteSize*1.2}).draw())
         // The pause screen's fps checkbox, centred under the action buttons
         if (check.clickable)
         {
