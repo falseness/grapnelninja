@@ -808,6 +808,9 @@ class Menu
             continueOffer.draw()
         }
         this.drawPauseScreen()
+        // After the panel is drawn: Grapple Over's pause interstitial
+        if (source === 'user' && version === 'grapple_over' && !CLIMB_UI.goingBack && !CLIMB_UI.offering)
+            showGrappleOverInterstitial('pause')
     }
     // Over the frozen last frame of the run, which stays visible through a
     // light tint and a see-through panel
@@ -1233,6 +1236,7 @@ const CLIMB_UI = {
         PLATFORM.submitScore('grapple_over_time', Math.round(stats.elapsedActiveMs))
         PROGRESS.flushClimb()
         menu.changeGamePause(true)
+        showGrappleOverInterstitial('summit')
     },
     restart() {
         this.confirming = false

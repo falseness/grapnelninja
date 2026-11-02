@@ -511,6 +511,24 @@
                     next()
                 })
             }
+            // Grapple Over has no death, so its interstitial plays at its own
+            // natural pauses: placement 'pause' (the player paused by the
+            // pause button or a pause key, never blur/host/rotation) and
+            // 'summit' (the summit screen). The backend decides whether one
+            // is due; while it plays the run stays paused and the pause menu
+            // ignores input (interstitialPending), usable again once the ad is
+            // closed, failed or skipped.
+            function showGrappleOverInterstitial(placement)
+            {
+                if (version !== 'grapple_over' || interstitialPending || !menu.gamePaused ||
+                    !PLATFORM.isInterstitialDue())
+                    return
+                interstitialPending = true
+                PLATFORM.showInterstitial(placement).then(() =>
+                {
+                    interstitialPending = false
+                })
+            }
             function startClassicVersion()
             {
                 screen = new Screen(false)
