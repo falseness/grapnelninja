@@ -8,6 +8,7 @@ const TELEMETRY = (() =>
     const modeMs = {single: 0, double: 0}
     // The last thing that happened in the run, sent once on pagehide
     let lastEvent = null, quitSent = false
+    const session = createSession()
     const percentile = (sorted, p) => sorted[Math.floor((sorted.length - 1) * p)]
     function resetClock() { last = null }
     document.addEventListener('visibilitychange', resetClock)
@@ -37,6 +38,7 @@ const TELEMETRY = (() =>
             active += dt
             frames.push(dt)
             if (grapnelMode in modeMs) modeMs[grapnelMode] += dt
+            session.frame(dt, grapnelMode)
             while (nextMilestone <= 60 && total >= nextMilestone * 1000)
             {
                 PLATFORM.track('active_play_milestone', {seconds: nextMilestone, mode})
@@ -77,6 +79,10 @@ const TELEMETRY = (() =>
             lastEvent = {type, sectionId: sectionId === undefined ? section() : sectionId}
         },
         lastEvent: () => lastEvent,
+        sendEnvironment: () => session.sendEnvironment(),
+        classify: info => session.classify(info),
+        flushPlayTime: () => session.flushPlayTime(),
+        playTime: () => session.playTime(),
         // pagehide: design('quit:<type>:<sectionId>') once per page
         sendQuit()
         {
@@ -86,3 +92,182 @@ const TELEMETRY = (() =>
         }
     }
 })()
+
+// Session and environment telemetry (TASK-861), through ANALYTICS only (so
+// it reaches GameAnalytics on the itch.io build alone). Ids and value ranges
+// are listed in docs/platform-sdk.md ("Session telemetry"). No user agent
+// string, no free text: the user agent is only parsed here into a family.
+//
+// Per frame (TELEMETRY.frame, active play only): one histogram increment and
+// a few additions, no allocation. Every PERF_WINDOW_MS of active play: the
+// perf:* events and the play time events; pagehide: the play time events.
+// Total play time per grapnel mode is kept in localStorage (PLAYTIME_KEY).
+function createSession()
+{
+    const PERF_WINDOW_MS = 60000
+    const PLAYTIME_KEY = 'grapnelninja_playtime_v1'
+    const MODES = ['single', 'double']
+    // Frame-time histogram: BIN_MS bins up to MAX_MS, the last bin overflows
+    const BIN_MS = 0.1, MAX_MS = 250, FREEZE_MS = 250
+    // A longer frame (a stall, a sleep without blur) counts as this much play
+    const MAX_PLAY_DT_MS = 1000
+    const bins = new Uint32Array(Math.round(MAX_MS / BIN_MS) + 1)
+    let windowFrames = 0, windowMs = 0, freezes = 0, envSent = false
+    const sessionMs = {single: 0, double: 0}
+    const baseMs = loadTotals()
+
+    function loadTotals()
+    {
+        const totals = {single: 0, double: 0}
+        try
+        {
+            const saved = JSON.parse(localStorage.getItem(PLAYTIME_KEY) || '{}')
+            for (const mode of MODES)
+                if (typeof saved[mode] === 'number' && isFinite(saved[mode]) && saved[mode] > 0)
+                    totals[mode] = saved[mode]
+        }
+        catch (e) {}
+        return totals
+    }
+    function saveTotals()
+    {
+        try
+        {
+            const totals = {}
+            for (const mode of MODES) totals[mode] = Math.round(baseMs[mode] + sessionMs[mode])
+            localStorage.setItem(PLAYTIME_KEY, JSON.stringify(totals))
+        }
+        catch (e) {}
+    }
+    const clamp = (value, max) => Math.max(0, Math.min(max, value))
+    // The histogram value below which `p` of the window's frames fall
+    function histogramPercentile(p)
+    {
+        const rank = Math.ceil(windowFrames * p)
+        let seen = 0
+        for (let i = 0; i < bins.length; i++)
+        {
+            seen += bins[i]
+            if (seen >= rank) return (i + 0.5) * BIN_MS
+        }
+        return MAX_MS
+    }
+    function sendPerf()
+    {
+        const p50 = histogramPercentile(0.5), p95 = histogramPercentile(0.95)
+        ANALYTICS.design('perf:fps_p50', Math.round(clamp(1000 / p50, 240)))
+        ANALYTICS.design('perf:fps_p5', Math.round(clamp(1000 / p95, 240)))
+        ANALYTICS.design('perf:frame_ms_p95', Math.round(clamp(p95, MAX_MS) * 10) / 10)
+        ANALYTICS.design('perf:freezes', clamp(freezes, 1000))
+        bins.fill(0)
+        // At most one window per frame, whatever the backlog
+        windowFrames = 0; windowMs %= PERF_WINDOW_MS; freezes = 0
+    }
+    // Whole seconds this session and in total, for each mode played at all
+    function flushPlayTime()
+    {
+        saveTotals()
+        for (const mode of MODES)
+        {
+            const total = Math.floor((baseMs[mode] + sessionMs[mode]) / 1000)
+            if (total <= 0) continue
+            ANALYTICS.design('playtime:session:' + mode, clamp(Math.floor(sessionMs[mode] / 1000), 1e8))
+            ANALYTICS.design('playtime:total:' + mode, clamp(total, 1e8))
+        }
+    }
+
+    // Lower bound of the bucket `value` falls in (the first bucket below it)
+    function bucket(value, bounds)
+    {
+        let result = bounds[0]
+        for (const b of bounds) if (value >= b) result = b
+        return result
+    }
+    function major(ua, pattern)
+    {
+        const m = ua.match(pattern)
+        return m ? clamp(parseInt(m[1], 10) || 0, 999) : 0
+    }
+    // info: {ua, maxTouchPoints, coarse, screenWidth, screenHeight,
+    // viewWidth, viewHeight, dpr, browserLanguage, gameLanguage}
+    // -> [[id, value?], ...] (pure; the ids need no sanitizing)
+    function classify(info)
+    {
+        const ua = String(info.ua || '')
+        const browsers = [
+            ['edge', /Edg(?:e|A|iOS)?\/(\d+)/], ['opera', /(?:OPR|Opera)\/(\d+)/],
+            ['samsung', /SamsungBrowser\/(\d+)/], ['yandex', /YaBrowser\/(\d+)/],
+            ['firefox', /(?:Firefox|FxiOS)\/(\d+)/], ['chrome', /(?:Chrome|CriOS)\/(\d+)/],
+            ['safari', /Version\/(\d+)[.\d]* (?:Mobile\/\S+ )?Safari\//]]
+        let browser = ['other', 0]
+        for (const [name, pattern] of browsers)
+            if (pattern.test(ua)) { browser = [name, major(ua, pattern)]; break }
+        const touchMac = /Macintosh/.test(ua) && info.maxTouchPoints > 1
+        const os = /Windows/.test(ua) ? 'windows'
+            : /iPhone|iPad|iPod/.test(ua) || touchMac ? 'ios'
+            : /Android/.test(ua) ? 'android'
+            : /CrOS/.test(ua) ? 'chromeos'
+            : /Macintosh|Mac OS X/.test(ua) ? 'macos'
+            : /Linux/.test(ua) ? 'linux' : 'other'
+        const device = /iPad/.test(ua) || touchMac || (/Android/.test(ua) && !/Mobile/.test(ua)) ? 'tablet'
+            : /iPhone|iPod|Mobi|Android/.test(ua) ? 'phone' : 'desktop'
+        const widths = [0, 320, 360, 400, 480, 600, 768, 1024, 1280, 1366, 1440, 1600, 1920, 2560, 3840]
+        const heights = [0, 320, 360, 480, 540, 600, 720, 768, 800, 900, 1080, 1200, 1440, 2160]
+        const size = (w, h) => bucket(w, widths) + 'x' + bucket(h, heights)
+        const dpr = bucket(Number(info.dpr) || 1, [1, 1.25, 1.5, 2, 2.5, 3, 4])
+        const browserLanguage = String(info.browserLanguage || '').toLowerCase().split('-')[0]
+        const gameLanguage = String(info.gameLanguage || '')
+        return [
+            ['env:browser:' + browser[0], browser[1]],
+            ['env:os:' + os],
+            ['env:device:' + device],
+            ['env:input:' + (info.coarse ? 'touch' : 'mouse')],
+            ['env:screen:' + size(info.screenWidth, info.screenHeight) + ':dpr' + dpr],
+            ['env:viewport:' + size(info.viewWidth, info.viewHeight)],
+            ['env:lang:' + (/^[a-z]{2}$/.test(gameLanguage) ? gameLanguage : 'other') + ':' +
+                (/^[a-z]{2,3}$/.test(browserLanguage) ? browserLanguage : 'other')]]
+    }
+
+    return {
+        frame(dt, grapnelMode)
+        {
+            bins[dt < MAX_MS ? Math.floor(dt / BIN_MS) : bins.length - 1]++
+            windowFrames++
+            if (dt > FREEZE_MS) freezes++
+            const played = dt < MAX_PLAY_DT_MS ? dt : MAX_PLAY_DT_MS
+            windowMs += played
+            if (grapnelMode === 'single' || grapnelMode === 'double') sessionMs[grapnelMode] += played
+            if (windowMs >= PERF_WINDOW_MS)
+            {
+                sendPerf()
+                flushPlayTime()
+            }
+        },
+        // Once per page, after the game language is known
+        // (window.screen: the game has its own global `screen`); never throws
+        sendEnvironment()
+        {
+            if (envSent) return
+            envSent = true
+            try
+            {
+                let coarse = false
+                try { coarse = matchMedia('(pointer: coarse)').matches } catch (e) {}
+                const device = window.screen || {}
+                const events = classify({
+                    ua: navigator.userAgent, maxTouchPoints: navigator.maxTouchPoints || 0, coarse,
+                    screenWidth: device.width, screenHeight: device.height,
+                    viewWidth: window.innerWidth, viewHeight: window.innerHeight,
+                    dpr: window.devicePixelRatio, browserLanguage: navigator.language,
+                    gameLanguage: typeof I18N !== 'undefined' ? I18N.language : ''})
+                for (const [id, value] of events) ANALYTICS.design(id, value)
+            }
+            catch (e) {}
+        },
+        classify,
+        flushPlayTime,
+        // ms, for tests: {session: {single, double}, total: {single, double}}
+        playTime: () => ({session: {...sessionMs},
+            total: {single: baseMs.single + sessionMs.single, double: baseMs.double + sessionMs.double}})
+    }
+}

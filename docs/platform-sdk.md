@@ -196,7 +196,65 @@ dropped; error messages <= 8000 chars), records it in `ANALYTICS.debugLog`
   restart / death / section / complete. `pagehide` sends, once per page and
   in this order: the mode time flush, `design('quit:<type>:<sectionId>')`,
   `progression('Fail', mode, sectionId)` for a section in progress, then
-  `sessionEnd()` last.
+  `sessionEnd()` last. The session play time events below go out right
+  after the mode time flush.
+
+### Session telemetry (TASK-861)
+
+telemetry.js `createSession()`, sent only through `ANALYTICS.design` (so it
+is sanitized, recorded in `ANALYTICS.debugLog`, and reaches GameAnalytics on
+the itch.io build only). Every id below is already clean (the sanitizer
+leaves it unchanged): at most 4 `:`-segments of `[A-Za-z0-9_.-]`, each
+<= 32 chars. No user agent string, no free text, no identifiers: the user
+agent is parsed in the page into a family name and a major version only.
+
+**Start events**, once per page, after `ANALYTICS.sessionStart()` and once
+the game language is applied (`TELEMETRY.sendEnvironment()` in boot), in
+this order (7 events):
+
+| Id | Value |
+| --- | --- |
+| `env:browser:<chrome\|firefox\|safari\|edge\|opera\|samsung\|yandex\|other>` | major version, integer 0..999 (0 = unknown) |
+| `env:os:<windows\|macos\|ios\|android\|linux\|chromeos\|other>` | none |
+| `env:device:<desktop\|phone\|tablet>` | none (iPad, iPadOS desktop mode = Macintosh UA with touch, Android without `Mobile` -> tablet) |
+| `env:input:<touch\|mouse>` | none (`(pointer: coarse)` -> touch) |
+| `env:screen:<W>x<H>:dpr<D>` | none. `window.screen` CSS size, each side floored to a bucket: W in 0, 320, 360, 400, 480, 600, 768, 1024, 1280, 1366, 1440, 1600, 1920, 2560, 3840; H in 0, 320, 360, 480, 540, 600, 720, 768, 800, 900, 1080, 1200, 1440, 2160; D (devicePixelRatio) in 1, 1.25, 1.5, 2, 2.5, 3, 4 |
+| `env:viewport:<W>x<H>` | none. `innerWidth` x `innerHeight` (the iframe), same buckets |
+| `env:lang:<game>:<browser>` | none. Game language (`en`/`ru`), browser primary language subtag (2-3 lower-case letters); anything else -> `other` |
+
+**Per minute of active play** (frames `TELEMETRY.frame` counts as playing;
+pauses, ads, hidden tab and the rotate prompt do not count; a single frame
+counts as at most 1000 ms of play, so a stall or a sleep without a blur event
+cannot inflate play time): every 60 000 ms of active frame time, at most once
+per frame, in this order:
+
+| Id | Value |
+| --- | --- |
+| `perf:fps_p50` | 1000 / median frame time, integer 0..240 |
+| `perf:fps_p5` | 5th percentile FPS = 1000 / 95th percentile frame time, integer 0..240 |
+| `perf:frame_ms_p95` | 95th percentile frame time in ms, 0.1 ms steps, 0..250 (250 = 250 ms or longer) |
+| `perf:freezes` | frames longer than 250 ms in that minute, integer 0..1000 |
+
+then the play time events. Frame times go into a fixed 0.1 ms histogram
+(one increment per frame, no allocation); the percentiles are read from it
+once a minute. A partial last minute sends no perf events. (The
+render/visualsperf.js freeze recorder is opt-in and costs per-frame work,
+so it is not used.)
+
+**Play time**, after each perf group and on `pagehide` (after
+`mode_time:*`, before `quit:*`), for each grapnel mode with at least one
+whole second of total play time:
+
+| Id | Value |
+| --- | --- |
+| `playtime:session:<single\|double>` | active play seconds this page session, whole seconds (floor), 0..1e8 |
+| `playtime:total:<single\|double>` | active play seconds across sessions, whole seconds (floor), 0..1e8 |
+
+The total is kept in `localStorage['grapnelninja_playtime_v1']`
+(`{"single": ms, "double": ms}`, written at every flush; unreadable storage
+-> starts at 0). Rate: 7 events at boot, at most 8 per active minute, at
+most 4 on pagehide. Tested by `tools/test_telemetry_session.py` (scripted
+3-minute headless run plus a reload).
 
 ## GameAnalytics backend (itch.io)
 

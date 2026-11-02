@@ -193,7 +193,7 @@
             boot()
 
             // Page errors -> ANALYTICS.error (10 unique messages per session);
-            // pagehide -> once per page: mode time flush, quit:<last event>,
+            // pagehide -> once per page: mode time flush, play time, quit:<last event>,
             // Fail for the section in progress, then ANALYTICS.sessionEnd last
             function watchAnalytics()
             {
@@ -221,7 +221,8 @@
                     if (ended)
                         return
                     ended = true
-                    for (const step of [() => TELEMETRY.flushModeTime(), () => TELEMETRY.sendQuit(),
+                    for (const step of [() => TELEMETRY.flushModeTime(), () => TELEMETRY.flushPlayTime(),
+                        () => TELEMETRY.sendQuit(),
                         () => CLIMB_UI.abandonProgression()])
                         try { step() } catch (e) {}
                     ANALYTICS.sessionEnd()
@@ -273,6 +274,7 @@
                 PLATFORM.loadingProgress(50)
                 I18N.language = I18N.pick(PROGRESS.getLang(), PLATFORM.language)
                 applyLanguage()
+                TELEMETRY.sendEnvironment()
                 setLoadingProgress(I18N.t('loading.starting'))
                 await loadGrappleOverLevelAsset()
                 PLATFORM.loadingProgress(90)

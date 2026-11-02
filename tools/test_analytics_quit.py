@@ -6,7 +6,8 @@
   whole second, when setGrapnelMode changes the mode and on pagehide.
 - TELEMETRY.mark(type, sectionId) keeps the last run event (fall, grapple,
   pause, restart, death, section, complete).
-- pagehide, once per page: mode_time flush, design('quit:<type>:<section>'),
+- pagehide, once per page: mode_time flush, playtime:* (TASK-861),
+  design('quit:<type>:<section>'),
   progression('Fail', mode, section) when a section is in progress, then
   sessionEnd last.
 
@@ -98,6 +99,12 @@ class QuitTests(unittest.TestCase):
         hide = page.evaluate('ANALYTICS.debugLog.length')
         page.evaluate(PAGEHIDE)
         tail = page.evaluate(LOG, hide)
+        # Play time events (TASK-861, tools/test_telemetry_session.py) follow the mode_time flush
+        playtime = [e['args'][0] for e in design(tail, 'playtime:')]
+        self.assertEqual(playtime, ['playtime:session:single', 'playtime:total:single',
+                                    'playtime:session:double', 'playtime:total:double'])
+        self.assertEqual([e['args'][0] for e in tail[1:5]], playtime)
+        tail = [e for e in tail if not (e['fn'] == 'addDesignEvent' and e['args'][0].startswith('playtime:'))]
         fns = [e['fn'] for e in tail]
         self.assertEqual(fns, ['addDesignEvent', 'addDesignEvent', 'addProgressionEvent', 'endSession'], tail)
         self.assertEqual(tail[0]['args'][0], 'mode_time:double')

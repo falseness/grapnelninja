@@ -44,7 +44,9 @@ OUT = []
 STATS_KEYS = ['elapsedActiveMs', 'currentHeight', 'maxHeight', 'completed', 'falls', 'grapples', 'goBacks']
 
 # Design entries of ANALYTICS.debugLog from index `from`
-DESIGN = '''from => ANALYTICS.debugLog.slice(from).filter(e => e.fn === 'addDesignEvent')
+# Session telemetry (TASK-861: env:/perf:/playtime:, tools/test_telemetry_session.py) set aside
+DESIGN = '''from => ANALYTICS.debugLog.slice(from).filter(e => e.fn === 'addDesignEvent'
+        && !/^(env|perf|playtime):/.test(e.args[0]))
     .map(e => ({id: e.args[0], value: e.args[1] ?? null}))'''
 
 # Freeze the frame loop: only the test's physics() ticks move the world

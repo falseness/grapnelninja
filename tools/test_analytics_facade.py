@@ -150,10 +150,13 @@ class AnalyticsFacadeTests(unittest.TestCase):
         boot = self.page.evaluate('''() => ({
             log: ANALYTICS.debugLog.map(e => [e.fn, e.args.map(a => a === undefined ? null : a)]),
             spawn: floors[0].level.sections[0].id, current: CLIMB_UI.currentSection().id})''')
-        self.assertEqual([fn for fn, _ in boot['log']],
+        # (TASK-861 env:* start events, tools/test_telemetry_session.py, set aside)
+        log = [e for e in boot['log'] if not (e[0] == 'addDesignEvent' and e[1][0].startswith('env:'))]
+        self.assertEqual(len(boot['log']) - len(log), 7)
+        self.assertEqual([fn for fn, _ in log],
                          ['initialize', 'startSession', 'addProgressionEvent'])
         self.assertEqual(boot['current'], boot['spawn'])
-        self.assertEqual(boot['log'][2][1][:3], ['Start', 'grapple_over', boot['spawn']])
+        self.assertEqual(log[2][1][:3], ['Start', 'grapple_over', boot['spawn']])
 
     def test_02_sanitization_cases(self):
         for name, (fn, args, expected) in CASES.items():
