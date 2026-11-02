@@ -19,17 +19,29 @@ texts.ru.md and CHECKLIST.md; the root needs README.md. The check:
 - playgama form: the description and howToPlayText halves have at least 100
   characters, the story 150..900 printable ASCII characters with no em dash;
 - credentials: no value from the credentials file appears in any kit file
-  (the values are never printed, only the variable names).
+  (the values are never printed, only the variable names);
+- zips: each portal's zip holds exactly the files (names and bytes) of a
+  tools/build_release.py build of the revision its manifest.json records
+  (Y8 ids and GA keys from the credentials file), and that revision's build
+  equals a build of HEAD (the build id in buildconfig.js aside). A failure
+  lists the differing file names (stale_files: rev build vs HEAD build);
+- playgama_esc: no Playgama text mentions Esc/Escape (Playgama reserves
+  Escape for leaving full screen, events.js buildUsesEscape()).
 
 Usage: python3 tools/check_release_kit.py [--root DIR] [--out JSON]
        [--credentials FILE]. Exit 0 when everything passes.
 """
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
 import sys
+import zipfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import build_release  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PORTALS = ['itch', 'gamepix', 'y8', 'playgama']
@@ -43,6 +55,7 @@ OTHER_MODES_RE = re.compile(
     r"[`'\"](?:bad|classic)[`'\"]",
     re.IGNORECASE)
 EXTRA_RE = re.compile(r'bonus|extra|бонус', re.IGNORECASE)
+ESC_RE = re.compile(r'\bEsc(?:ape)?\b', re.IGNORECASE)
 
 
 def read(path):
@@ -113,7 +126,57 @@ def credential_values(path):
     return values
 
 
-def check(root, credentials, out=None):
+def zip_files(path):
+    with zipfile.ZipFile(path) as z:
+        return {n: z.read(n) for n in z.namelist() if not n.endswith('/')}
+
+
+def differing(a, b):
+    return sorted(p for p in set(a) | set(b) if a.get(p) != b.get(p))
+
+
+def check_zip(root, portal, env, head_tree, trees):
+    """Zip == build of its manifest revision, and that build == the HEAD build."""
+    folder = os.path.join(root, portal)
+    entry = {'portal': portal, 'zip': None, 'revision': None, 'head': head_tree.revision}
+    manifest_path = os.path.join(folder, 'manifest.json')
+    zip_path = os.path.join(folder, 'grapple-over-%s.zip' % portal)
+    if not (os.path.isfile(manifest_path) and os.path.isfile(zip_path)):
+        entry.update(error='zip or manifest.json missing', ok=False)
+        return entry
+    entry['zip'] = os.path.relpath(zip_path, REPO)
+    rev = json.loads(read(manifest_path)).get('revision', '')
+    entry['revision'] = rev
+    try:
+        if rev not in trees:
+            trees[rev] = build_release.CommittedTree(rev)
+        tree = trees[rev]
+        y8 = build_release.y8_ids_for(portal, env)
+        ga = build_release.ga_keys_for(portal, env)
+        built = build_release.runtime_files(tree, portal, y8, ga)
+        head = build_release.runtime_files(head_tree, portal, y8, ga)
+    except (SystemExit, Exception) as exc:  # noqa: BLE001 - report, never crash
+        msg = str(exc)
+        for v in env.values():
+            if v and len(v) >= 6:
+                msg = msg.replace(v, '<value>')
+        entry.update(error='build failed: ' + msg[:200], ok=False)
+        return entry
+    with open(zip_path, 'rb') as f:
+        entry['zip_sha256'] = hashlib.sha256(f.read()).hexdigest()
+    entry['zip_vs_rev_build'] = differing(zip_files(zip_path), built)
+    # The build id (commit sha + date) in buildconfig.js differs per revision
+    cfg = 'buildconfig.js'
+    if cfg in built:
+        built = dict(built)
+        built[cfg] = built[cfg].replace(tree.build_id().encode(), head_tree.build_id().encode())
+    entry['stale_files'] = differing(built, head)
+    entry['rev_is_head'] = tree.revision == head_tree.revision
+    entry['ok'] = not entry['zip_vs_rev_build'] and not entry['stale_files']
+    return entry
+
+
+def check(root, credentials, out=None, head='HEAD'):
     result = {'root': os.path.relpath(root, REPO), 'files': [], 'paths': [], 'texts': [],
               'playgama_form': {}, 'credentials': {}}
     kit_files = [os.path.join(root, 'README.md')] + [
@@ -201,6 +264,22 @@ def check(root, credentials, out=None):
     result['credentials'] = {'file_read': bool(values), 'variables_checked': sorted(values),
                              'hits': hits, 'ok': bool(values) and not hits}
 
+    # Zips are builds of their manifest revision and that revision ships HEAD's game
+    env = credential_values(credentials)
+    head_tree = build_release.CommittedTree(head)
+    trees = {head_tree.revision: head_tree}
+    result['zips'] = [check_zip(root, p, env, head_tree, trees) for p in PORTALS]
+
+    # Playgama reserves Escape: its texts never mention Esc
+    esc_hits = []
+    for name in ['texts.en.md', 'texts.ru.md']:
+        path = os.path.join(root, 'playgama', name)
+        if os.path.isfile(path):
+            esc_hits += [{'file': os.path.relpath(path, REPO), 'line': i + 1, 'match': m.group(0)}
+                         for i, l in enumerate(read(path).splitlines())
+                         for m in ESC_RE.finditer(l)]
+    result['playgama_esc'] = {'hits': esc_hits, 'ok': not esc_hits}
+
     result['summary'] = {
         'files_ok': all(e['ok'] for e in result['files']),
         'files': len(result['files']),
@@ -210,10 +289,15 @@ def check(root, credentials, out=None):
         'texts_ok': all(e['ok'] for e in result['texts']) and len(result['texts']) == 8,
         'playgama_form_ok': result['playgama_form'].get('ok', False),
         'credentials_ok': result['credentials']['ok'],
+        'zips_ok': all(e['ok'] for e in result['zips']),
+        'stale_zips': {e['portal']: e.get('stale_files') or e.get('zip_vs_rev_build')
+                       or e.get('error') for e in result['zips'] if not e['ok']},
+        'playgama_esc_ok': result['playgama_esc']['ok'],
     }
     s = result['summary']
     result['all_ok'] = all([s['files_ok'], s['paths_ok'], s['texts_ok'],
-                            s['playgama_form_ok'], s['credentials_ok']])
+                            s['playgama_form_ok'], s['credentials_ok'], s['zips_ok'],
+                            s['playgama_esc_ok']])
     return result
 
 
@@ -224,7 +308,7 @@ def main():
     ap.add_argument('--credentials', default='/root/credentials/grapnelninja/credentials.env')
     args = ap.parse_args()
     result = check(os.path.abspath(args.root), args.credentials, args.out)
-    text = json.dumps(result, indent=1, ensure_ascii=False)
+    text = json.dumps(result, separators=(',', ':'), ensure_ascii=False)
     if args.out:
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
         with open(args.out, 'w', encoding='utf-8') as f:
