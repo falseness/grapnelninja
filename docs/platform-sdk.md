@@ -256,6 +256,63 @@ The total is kept in `localStorage['grapnelninja_playtime_v1']`
 most 4 on pagehide. Tested by `tools/test_telemetry_session.py` (scripted
 3-minute headless run plus a reload).
 
+### Gameplay and UI telemetry (TASK-862)
+
+Grapple Over gameplay and the UI, through `ANALYTICS` only (so it reaches
+GameAnalytics on the itch.io build alone). Every id is already clean (the
+sanitizer leaves it unchanged); section ids are the level's
+(`SEC-baseline`, ..., `SEC-sky-spire`). Nothing here is saved. A **fall**
+is the continuous drop `LONG_FALL` measures: from the last grapple catch or
+the last apex (a rise resets it), in game units; a teleport (fall recovery,
+go back) ends it. Its **section** is the section of the last grapple catch
+(`climbFallSection()`; the spawn section when there was none since the
+launch or the last recovery), as for `fall:*`.
+
+**Fall buckets** (value = the lower bound the distance reaches): 0, 1000,
+2000, 4000, 6000, 10000, 15000, 20000, 30000, 50000, 75000, 100000, 150000.
+
+Existing counters, reused (unchanged): `best_height:<mode>` (best height,
+500-unit buckets), `fall:<sectionId>` (every counted fall, i.e. every fall
+recovery, with its section), `restart:<mode>` (restarts), `goback:<sectionId>`
+(the player was put back at the checkpoint; the checkpoint's section),
+`quit:<type>:<sectionId>`, `mode_time:<mode>`.
+
+**Progression** (`addProgressionEvent`):
+
+| Event | When |
+| --- | --- |
+| `Start` `grapple_over` | the run: its first tracked frame on this page (a new run, a restart, or a restored run after a reload; not for a completed run) |
+| `Complete` `grapple_over`, score = active seconds (rounded) | the summit, after the last section's Complete |
+| `Fail` `grapple_over` | a restart while the run is open (before `restart:*`), and `pagehide` (after the section's Fail) |
+| `Start` / `Complete` / `Fail` `grapple_over` `<sectionId>` | per section reached, unchanged (TASK-751): Start on entering a section not completed in this run, Complete when left upward (once per run) and at the summit, Fail when left downward and on `pagehide` |
+
+**Design events:**
+
+| Id | Value | When |
+| --- | --- | --- |
+| `section_height:<sectionId>` | highest climb height reached in the section during the visit, floored to 1000-unit buckets (0..202000; negative heights -> 0) | when the player leaves the section, at the summit, on a restart and on `pagehide`; only when the bucket is higher than the one sent for that section earlier in the run |
+| `longest_fall:session` | fall bucket of the session's longest single fall | `pagehide`, after `quit:*`; nothing if the player never fell |
+| `longest_fall:complete` | fall bucket of the session's longest single fall so far | when the game is beaten (summit), after the run Complete |
+| `quit_long_fall:<sectionId>` | fall bucket of that fall | `pagehide` within 30 s (wall clock) after the last moment of a fall longer than `LONG_FALL_THRESHOLD` (4000), with that fall's section; at most once per page |
+| `goback_offer:<sectionId>` | fall bucket when offered (10000, 20000, ...) | the 'Go back?' dialog opens (every offer, again after Keep falling) |
+| `goback_choice:keep:<sectionId>` | none | Keep falling (button, Escape, or a rewarded ad answering `closed`) |
+| `goback_choice:back:<sectionId>` | none | Go back pressed |
+| `goback_ad:<result>` | none | the go-back rewarded ad's answer: `rewarded`, `closed`, `failed`, `unavailable`, `skipped`, `timeout` (no answer within 30 s), `other`; `unsupported` when the build has no rewarded ads (the player goes back for free). `ad('reward_received' \| 'show' \| 'failed_show', 'rewarded', 'go_back')` still comes from PLATFORM |
+| `ui:pause:open:<user\|auto>` | none | a pause screen opens: `user` = pause button or P/Escape key; `auto` = blur, hidden tab, host pause, rotation, a restored run (the go-back dialog and the double offer are not pause screens) |
+| `ui:pause:close` | none | the game unpauses after a pause screen (resume, restart, mode change) |
+| `ui:grapnel:<single\|double>` | none | the grapnel mode changes (pause toggle, Try double offer, win screen try-default) |
+| `ui:lang:<en\|ru>` | none | the language button switches the language |
+| `ui:fps:<on\|off>` | none | the fps checkbox (pause or death screen) |
+| `tutorial:grapple:shown` | none | the control hint (the one tutorial step, "hold to grapple") is shown, once per page |
+| `tutorial:grapple:completed` | none | the step is done: the first grapnel throw of the page while the hint is up |
+
+`pagehide` order: `mode_time:*`, `playtime:*`, `quit:*`,
+`longest_fall:session`, `quit_long_fall:*`, `section_height:*`, section
+Fail, run Fail, `sessionEnd()`. Cost: one comparison per physics cycle
+(`TELEMETRY.falling`, from `LONG_FALL.step`) and one per frame
+(`CLIMB_UI.trackSection`). Tested by `tools/test_telemetry_gameplay.py`
+(scripted runs, exact expected sequences).
+
 ## GameAnalytics backend (itch.io)
 
 `analytics/backends/gameanalytics.js` (TASK-860) is `none.js` with each

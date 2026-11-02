@@ -185,7 +185,7 @@ function createEvents()
             if (menu.gamePaused)
                 menu.unPause()
             else
-                menu.startPause()
+                menu.startPause('user')
         }
     })
 }

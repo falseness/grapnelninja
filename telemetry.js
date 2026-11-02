@@ -8,7 +8,10 @@ const TELEMETRY = (() =>
     const modeMs = {single: 0, double: 0}
     // The last thing that happened in the run, sent once on pagehide
     let lastEvent = null, quitSent = false
+    // A pause screen is open (ui:pause:open sent, no ui:pause:close yet)
+    let pauseOpen = false
     const session = createSession()
+    const falls = createFallTelemetry()
     const percentile = (sorted, p) => sorted[Math.floor((sorted.length - 1) * p)]
     function resetClock() { last = null }
     document.addEventListener('visibilitychange', resetClock)
@@ -79,6 +82,20 @@ const TELEMETRY = (() =>
             lastEvent = {type, sectionId: sectionId === undefined ? section() : sectionId}
         },
         lastEvent: () => lastEvent,
+        // ui:pause:open:<user|auto> once per opening, ui:pause:close once
+        // when the game unpauses after it
+        pauseScreen(open, source)
+        {
+            if (open === pauseOpen) return
+            pauseOpen = open
+            ANALYTICS.design(open ? 'ui:pause:open:' + (source === 'user' ? 'user' : 'auto') : 'ui:pause:close')
+        },
+        // Gameplay falls (TASK-862), see createFallTelemetry
+        falling: displacement => falls.falling(displacement),
+        sendLongestFall: tag => falls.sendLongest(tag),
+        sendQuitAfterLongFall: () => falls.sendQuitAfterLongFall(),
+        fallBucket: displacement => falls.bucket(displacement),
+        fallState: () => falls.state(),
         sendEnvironment: () => session.sendEnvironment(),
         classify: info => session.classify(info),
         flushPlayTime: () => session.flushPlayTime(),
@@ -269,5 +286,61 @@ function createSession()
         // ms, for tests: {session: {single, double}, total: {single, double}}
         playTime: () => ({session: {...sessionMs},
             total: {single: baseMs.single + sessionMs.single, double: baseMs.double + sessionMs.double}})
+    }
+}
+
+// Gameplay fall telemetry (TASK-862), through ANALYTICS only. A fall is the
+// continuous drop LONG_FALL measures (from the last catch or apex: y - startY,
+// game units). Ids and buckets are listed in docs/platform-sdk.md ("Gameplay
+// and UI telemetry").
+//
+// falling(): every physics cycle of a Grapple Over run (LONG_FALL.step), so
+// it only compares numbers; past LONG_FALL_THRESHOLD it also remembers the
+// fall's section and the wall-clock time for the quit-after-long-fall check.
+function createFallTelemetry()
+{
+    const BUCKETS = [0, 1000, 2000, 4000, 6000, 10000, 15000, 20000, 30000, 50000, 75000, 100000, 150000]
+    const QUIT_WINDOW_MS = 30000
+    // The session's longest single fall (raw units), the last long fall
+    let longest = 0, longFall = null, quitSent = false, previous = 0
+
+    // Lower bound of the bucket the distance falls in
+    function bucket(displacement)
+    {
+        let result = 0
+        for (const b of BUCKETS) if (displacement >= b) result = b
+        return result
+    }
+    return {
+        bucket,
+        falling(displacement)
+        {
+            const before = previous
+            previous = displacement
+            if (!(displacement > 0)) return
+            if (displacement > longest) longest = displacement
+            if (displacement <= LONG_FALL_THRESHOLD) return
+            // A new long fall unless the same one just went on growing
+            if (!longFall || before <= LONG_FALL_THRESHOLD || displacement < before)
+                longFall = {section: climbFallSection()}
+            longFall.displacement = displacement
+            longFall.at = Date.now()
+        },
+        // design('longest_fall:<tag>', bucket): 'session' on pagehide,
+        // 'complete' at the summit; nothing before any fall
+        sendLongest(tag)
+        {
+            if (longest > 0) ANALYTICS.design('longest_fall:' + tag, bucket(longest))
+        },
+        // pagehide within QUIT_WINDOW_MS after the last moment of a fall
+        // longer than LONG_FALL_THRESHOLD: design('quit_long_fall:<section>', bucket)
+        sendQuitAfterLongFall()
+        {
+            if (quitSent || !longFall || Date.now() - longFall.at > QUIT_WINDOW_MS) return
+            quitSent = true
+            ANALYTICS.design('quit_long_fall:' + longFall.section, bucket(longFall.displacement))
+        },
+        // For tests
+        state: () => ({longest, longFall: longFall && {...longFall}})
     }
 }

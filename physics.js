@@ -175,6 +175,14 @@ function climbDesignRun(stats)
     return climbDesign
 }
 
+// The section a fall counts against: the section of the last grapple catch,
+// the spawn section when there was none since the launch
+function climbFallSection()
+{
+    const world = floors[0]
+    return climbDesignRun(world.climbStats).section ?? world.level.sections[0].id
+}
+
 // One design event per best height bucket reached for the first time this run
 function reportClimbHeight(stats)
 {
@@ -260,7 +268,7 @@ function recoverClimbFall()
     // The fall counts against the section of the last catch (the spawn
     // section when there was none since the launch)
     const run = climbDesignRun(world.climbStats)
-    const fallSection = run.section ?? world.level.sections[0].id
+    const fallSection = climbFallSection()
     ANALYTICS.design('fall:' + fallSection)
     TELEMETRY.mark('fall', fallSection)
     run.section = null

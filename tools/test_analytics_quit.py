@@ -105,6 +105,15 @@ class QuitTests(unittest.TestCase):
                                     'playtime:session:double', 'playtime:total:double'])
         self.assertEqual([e['args'][0] for e in tail[1:5]], playtime)
         tail = [e for e in tail if not (e['fn'] == 'addDesignEvent' and e['args'][0].startswith('playtime:'))]
+        # Gameplay telemetry (TASK-862, tools/test_telemetry_gameplay.py) after quit:*: the
+        # session's longest fall, the section height, then the run Fail after the section Fail
+        gameplay = [e for e in tail if (e['fn'] == 'addDesignEvent' and e['args'][0].split(':')[0] in
+                                        ('longest_fall', 'section_height', 'quit_long_fall')) or
+                    (e['fn'] == 'addProgressionEvent' and e['args'][2] is None)]
+        self.assertEqual([e['args'][0] for e in gameplay], ['longest_fall:session', 'section_height:' + progress['id'],
+                                                           'Fail'], tail)
+        self.assertEqual(tail[-2], gameplay[-1])
+        tail = [e for e in tail if e not in gameplay]
         fns = [e['fn'] for e in tail]
         self.assertEqual(fns, ['addDesignEvent', 'addDesignEvent', 'addProgressionEvent', 'endSession'], tail)
         self.assertEqual(tail[0]['args'][0], 'mode_time:double')

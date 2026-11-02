@@ -73,6 +73,8 @@ const LONG_FALL = (function()
                     : {id: ++emitted, ...pick(random()), displacement: y - startY}
             }
             lastY = y
+            // Gameplay telemetry: the session's longest fall, the last long one
+            TELEMETRY.falling(y - startY)
         },
         // Recovery or go-back teleport: restart tracking at the new position,
         // keep the reaction.

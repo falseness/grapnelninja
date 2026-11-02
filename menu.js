@@ -380,6 +380,7 @@ class FpsCounter
     toggle()
     {
         this.enabled = !this.enabled
+        ANALYTICS.design('ui:fps:' + (this.enabled ? 'on' : 'off'))
         this.frames = 0
         this.lastSampleTime = 0
     }
@@ -528,7 +529,7 @@ class Menu
             },
             function()
             {
-                menu.startPause()
+                menu.startPause('user')
             },
             {
                 draw: function(x, y, w, h)
@@ -733,6 +734,7 @@ class Menu
     changeGamePause(isPaused)
     {
         this.gamePaused = isPaused
+        if (!isPaused) TELEMETRY.pauseScreen(false)
         
         this.pauseFpsCounterCheckbox.clickable = isPaused && (version !== 'grapple_over' || CLIMB_UI.showsFps())
         this.resume.clickable                   = isPaused
@@ -760,7 +762,9 @@ class Menu
                 STYLE.colors.ui.primary : STYLE.colors.ui.buttonDangerStroke
         })
     }
-    startPause()
+    // source 'user': the pause button or a pause key; anything else is an
+    // automatic pause (blur, hidden tab, host, rotation, a restored run)
+    startPause(source)
     {
         if (version === 'grapple_over')
         {
@@ -777,6 +781,9 @@ class Menu
         PLATFORM.sendLifecycle('level_paused')
         PLATFORM.gameplayStop('pause', version)
         TELEMETRY.mark('pause')
+        // The go-back dialog and the double offer have telemetry of their own
+        if (!(version === 'grapple_over' && (CLIMB_UI.goingBack || CLIMB_UI.offering)))
+            TELEMETRY.pauseScreen(true, source)
 
         // A fresh frame under the panel: over the death screen its buttons
         // would otherwise show through stale. (A pause during boot has no
@@ -1021,6 +1028,12 @@ const GAME_AUDIO = {
     mute(reason, on) { if (on) this.reasons.add(reason); else this.reasons.delete(reason) }
 }
 
+// Section height telemetry bucket (game units)
+const CLIMB_SECTION_HEIGHT_BUCKET = 1000
+// goback_ad:<result>: the 'go_back' rewarded ad answers; 'timeout' is no
+// answer within CLIMB_UI.goBackAdTimeoutMs, anything else is 'other'
+const GO_BACK_AD_RESULTS = ['rewarded', 'closed', 'failed', 'unavailable', 'skipped', 'timeout']
+
 // Climb statistics describe the current simulation; they never move the player.
 const CLIMB_UI = {
     confirming: false,
@@ -1075,21 +1088,50 @@ const CLIMB_UI = {
     // entering a section not yet completed, 'Complete' (once per run) for the
     // section left upward and at the summit, 'Fail' for the section left
     // downward. open: a Start was sent for id with no Complete/Fail yet.
-    progression: {id: null, index: -1, open: false, completed: new Set()},
+    // The run itself (level1 only): 'Start' at its first tracked frame on
+    // this page, 'Complete' at the summit (score: active seconds), 'Fail' on
+    // a restart or pagehide while open (run).
+    // Section heights: peak is the highest climb height in the section since
+    // the player entered it; heights[id] the last 1000-unit bucket sent.
+    progression: {id: null, index: -1, open: false, completed: new Set(), run: false, peak: -Infinity,
+        heights: new Map()},
     resetProgression() {
-        this.progression = {id: null, index: -1, open: false, completed: new Set()}
+        this.progression = {id: null, index: -1, open: false, completed: new Set(), run: false, peak: -Infinity,
+            heights: new Map()}
+    },
+    // design('section_height:<id>', bucket) for the section being left, when
+    // its peak reached a higher 1000-unit bucket than sent before in this run
+    reportSectionHeight() {
+        const p = this.progression
+        if (p.id === null || !(p.peak > -Infinity)) return
+        const bucket = Math.max(0, Math.floor(p.peak / CLIMB_SECTION_HEIGHT_BUCKET) * CLIMB_SECTION_HEIGHT_BUCKET)
+        if (p.heights.has(p.id) && p.heights.get(p.id) >= bucket) return
+        p.heights.set(p.id, bucket)
+        ANALYTICS.design('section_height:' + p.id, bucket)
     },
     // Called once a frame while playing; sends events only on a section change
     trackSection() {
         if (version !== 'grapple_over' || !floors[0]?.level?.sections?.length || floors[0].climbStats?.completed) return
         const sections = floors[0].level.sections, section = this.currentSection(), p = this.progression
-        if (section.id === p.id) return
+        if (!p.run && p.id === null)
+        {
+            p.run = true
+            ANALYTICS.progression('Start', version)
+        }
+        const height = floors[0].climbStats.currentHeight
+        if (section.id === p.id)
+        {
+            if (height > p.peak) p.peak = height
+            return
+        }
         const index = sections.indexOf(section)
         if (p.id !== null && p.open)
         {
             if (index > p.index) p.completed.add(p.id)
             ANALYTICS.progression(index > p.index ? 'Complete' : 'Fail', version, p.id)
         }
+        this.reportSectionHeight()
+        p.peak = height
         p.id = section.id
         p.index = index
         p.open = !p.completed.has(section.id)
@@ -1097,20 +1139,39 @@ const CLIMB_UI = {
         TELEMETRY.mark('section', section.id)
     },
     // pagehide: the section in progress (Start sent, no Complete/Fail) fails
+    // (with its height), then the run in progress fails
     abandonProgression() {
         const p = this.progression
-        if (!p.open) return
-        p.open = false
-        ANALYTICS.progression('Fail', version, p.id)
+        this.reportSectionHeight()
+        if (p.open)
+        {
+            p.open = false
+            ANALYTICS.progression('Fail', version, p.id)
+        }
+        if (p.run)
+        {
+            p.run = false
+            ANALYTICS.progression('Fail', version)
+        }
     },
     // Summit: the last section is complete
     completeProgression() {
         this.trackSection()
         const p = this.progression
-        if (!p.open) return
-        p.open = false
-        p.completed.add(p.id)
-        ANALYTICS.progression('Complete', version, p.id)
+        if (p.open)
+        {
+            p.open = false
+            p.completed.add(p.id)
+            ANALYTICS.progression('Complete', version, p.id)
+        }
+        this.reportSectionHeight()
+        if (p.run)
+        {
+            p.run = false
+            ANALYTICS.progression('Complete', version, undefined, undefined,
+                Math.round(floors[0].climbStats.elapsedActiveMs / 1000))
+        }
+        TELEMETRY.sendLongestFall('complete')
     },
     drawHud(button) {
         const stats = floors[0].climbStats, h = height / scale[version]
@@ -1163,6 +1224,9 @@ const CLIMB_UI = {
         this.confirming = false
         this.offering = false
         this.goingBack = false
+        // The run being replaced fails (its open section is left as before)
+        this.reportSectionHeight()
+        if (this.progression.run) ANALYTICS.progression('Fail', version)
         PROGRESS.resetClimb()
         this.resetProgression()
         pressHeld = stalePress = gameplayPressOwned = false
@@ -1533,6 +1597,7 @@ const CLIMB_UI = {
     // stopped, until Go back or Keep falling. After Keep falling it is offered
     // again GO_BACK_FALL_THRESHOLD below this point (or after a new catch).
     offerGoBack() {
+        ANALYTICS.design('goback_offer:' + climbFallSection(), TELEMETRY.fallBucket(LONG_FALL.tracking().displacement))
         LONG_FALL.goBackOffered()
         this.goingBack = true
         this.goBackWorld = floors[0]
@@ -1551,16 +1616,22 @@ const CLIMB_UI = {
     // go back; an answer after that is ignored. Game audio is muted meanwhile.
     goBack() {
         if (this.goBackAdPending) return
-        if (!PLATFORM.isRewardedSupported()) return this.returnBack()
+        ANALYTICS.design('goback_choice:back:' + climbFallSection())
+        if (!PLATFORM.isRewardedSupported())
+        {
+            ANALYTICS.design('goback_ad:unsupported')
+            return this.returnBack()
+        }
         this.goBackAdPending = true
         const world = this.goBackWorld
         GAME_AUDIO.mute('ad', true)
         redrawOverlays()
         let timer
-        const timeout = new Promise(resolve => { timer = setTimeout(() => resolve('failed'), this.goBackAdTimeoutMs) })
+        const timeout = new Promise(resolve => { timer = setTimeout(() => resolve('timeout'), this.goBackAdTimeoutMs) })
         Promise.race([PLATFORM.showRewarded('go_back'), timeout]).then(result => {
             clearTimeout(timer)
             this.goBackAdPending = false
+            ANALYTICS.design('goback_ad:' + (GO_BACK_AD_RESULTS.includes(result) ? result : 'other'))
             GAME_AUDIO.mute('ad', false)
             if (!this.goingBack || world !== floors[0]) return redrawOverlays()
             if (result === 'closed') this.keepFalling()
@@ -1576,6 +1647,7 @@ const CLIMB_UI = {
         redrawOverlays()
     },
     keepFalling() {
+        ANALYTICS.design('goback_choice:keep:' + climbFallSection())
         this.goingBack = false
         gameplayPressOwned = false
         stalePress = pressHeld

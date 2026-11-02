@@ -194,7 +194,9 @@
 
             // Page errors -> ANALYTICS.error (10 unique messages per session);
             // pagehide -> once per page: mode time flush, play time, quit:<last event>,
-            // Fail for the section in progress, then ANALYTICS.sessionEnd last
+            // the session's longest fall, a quit soon after a long fall, the
+            // section height and Fail for the section and run in progress, then
+            // ANALYTICS.sessionEnd last
             function watchAnalytics()
             {
                 const MAX_ERRORS = 10
@@ -222,7 +224,8 @@
                         return
                     ended = true
                     for (const step of [() => TELEMETRY.flushModeTime(), () => TELEMETRY.flushPlayTime(),
-                        () => TELEMETRY.sendQuit(),
+                        () => TELEMETRY.sendQuit(), () => TELEMETRY.sendLongestFall('session'),
+                        () => TELEMETRY.sendQuitAfterLongFall(),
                         () => CLIMB_UI.abandonProgression()])
                         try { step() } catch (e) {}
                     ANALYTICS.sessionEnd()
@@ -703,6 +706,7 @@
             function setLanguage(lang)
             {
                 I18N.language = lang
+                ANALYTICS.design('ui:lang:' + I18N.language)
                 applyLanguage()
                 PROGRESS.setLang(I18N.language)
                 PROGRESS.save()

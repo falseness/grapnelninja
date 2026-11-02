@@ -16,6 +16,8 @@ const TUTORIAL_HINT = {
     pressed: false,
     // The fade has finished: the hint stays hidden for this page load
     done: false,
+    // tutorial:grapple:shown went out (once per page)
+    shownSent: false,
     sprite: null,
     spriteKey: '',
     // Strings baked into the current sprite, and how many sprites were built
@@ -29,6 +31,12 @@ const TUTORIAL_HINT = {
     {
         if (this.pressed)
             return
+        // Once per page: the hint (one step, 'hold to grapple') is up
+        if (!this.shownSent)
+        {
+            this.shownSent = true
+            ANALYTICS.design('tutorial:grapple:shown')
+        }
         this.visible = true
         this.alpha = 1
         this.time = 0
@@ -41,6 +49,8 @@ const TUTORIAL_HINT = {
             return
         this.pressed = true
         PLATFORM.startup('tutorial_dismissed', mode)
+        // The step is done: the player threw the grapnel
+        ANALYTICS.design('tutorial:grapple:completed')
     },
 
     // Active game time only: the game loop calls this for simulated steps,

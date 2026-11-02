@@ -44,8 +44,9 @@ NGU_INPUTS = purple.INPUTS['NGU']
 OUT = []
 OUT_TRACE = []
 
-# Progression entries of ANALYTICS.debugLog from index `from`
-PROGRESSION = '''from => ANALYTICS.debugLog.slice(from).filter(e => e.fn === 'addProgressionEvent')
+# Section progression entries of ANALYTICS.debugLog from index `from` (the
+# run-level events, level1 only, are TASK-862's: test_telemetry_gameplay)
+PROGRESSION = '''from => ANALYTICS.debugLog.slice(from).filter(e => e.fn === 'addProgressionEvent' && e.args[2] !== undefined)
     .map(e => ({status: e.args[0], mode: e.args[1], section: e.args[2]}))'''
 
 # The frame check: one trackSection() per production physics() tick; FRAMES
