@@ -32,7 +32,10 @@ FAKE_BRIDGE = '''(() => {
     const FAKE = window.__fakeBridge = {calls: [], throwOnShow: false,
         count(event) { return (listeners[event] || []).length },
         emit(event, state) { (listeners[event] || []).slice().forEach(fn => fn(state)) }}
+    // TASK-859: the ported backend uses the bridge only after initialize()
     window.bridge = {
+        initialize() { return Promise.resolve() },
+        platform: {id: 'fake', language: 'en', isAudioEnabled: true, on() {}, sendMessage() { return Promise.resolve() }},
         EVENT_NAME: {PAUSE_STATE_CHANGED: 'pause_state_changed', AUDIO_STATE_CHANGED: 'audio_state_changed',
             INTERSTITIAL_STATE_CHANGED: 'interstitial_state_changed',
             REWARDED_STATE_CHANGED: 'rewarded_state_changed'},
@@ -185,7 +188,8 @@ class PlaygamaRewardedTests(unittest.TestCase):
         page.mouse.click(p['x'], p['y'])
         E = 'bridge.EVENT_NAME.REWARDED_STATE_CHANGED'
         waiting = page.evaluate('() => [CLIMB_UI.goBackAdPending, window.__fakeBridge.count(%s)]' % E)
-        self.assertEqual(waiting, [True, 1])
+        # TASK-859: +1 permanent listener (the backend's ad-state subscription)
+        self.assertEqual(waiting, [True, 2])
         page.evaluate('''async () => { const F = window.__fakeBridge, E = %s
             F.emit(E, 'opened'); F.emit(E, 'rewarded'); F.emit(E, 'closed')
             for (let i = 0; i < 5; i++) await Promise.resolve()
@@ -195,7 +199,7 @@ class PlaygamaRewardedTests(unittest.TestCase):
             listeners: window.__fakeBridge.count(%s), calls: window.__fakeBridge.calls.slice()})''' % E))
         self.assertEqual(after['calls'], ['go_back'])
         self.assertFalse(after['pending'] or after['dialog'] or after['paused'])
-        self.assertEqual(after['listeners'], 0)
+        self.assertEqual(after['listeners'], 1)
         self.assertEqual(after['goBacks'], 1)
         self.assertTrue(after['grapnel']['grappled'])
         self.assertEqual(after['grapnel']['anchor'], [cp['anchorX'], cp['anchorY']])

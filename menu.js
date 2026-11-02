@@ -1012,7 +1012,8 @@ const WIN_ART = {
 
 // Game audio state: muted while any reason holds: 'ad' while a rewarded ad
 // plays (CLIMB_UI.goBack), 'host' while the host pauses the game (window blur,
-// a hidden tab, a portal pause event; index.html PLATFORM.onPause). The game
+// a hidden tab, a portal pause event or the portal turning audio off; index.html
+// PLATFORM.onPause / PLATFORM.onAudio). The game
 // has no sound output yet; a future sound module reads muted.
 const GAME_AUDIO = {
     reasons: new Set(),

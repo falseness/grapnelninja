@@ -314,6 +314,49 @@ class BuildReleaseTest(unittest.TestCase):
         if evidence:
             (Path(evidence) / 'boot.json').write_text(json.dumps(report, indent=2) + '\n')
 
+    def test_08_playgama_old_build_checks(self):
+        """The checks of the old tools/build_playgama.py (playgama-start-firefox) that still apply."""
+        files = self.zips['playgama']
+        zip_bytes = (self.out / 'playgama' / 'grapple-over-playgama.zip').read_bytes()
+        html = files['index.html']
+        # index.html at the zip root; UTF-8 declared in the first 1024 bytes
+        self.assertIn('index.html', files)
+        self.assertIn(b'<meta charset="UTF-8">', html[:1024])
+        print('PASS playgama: index.html at the zip root, <meta charset="UTF-8"> in its first 1024 bytes')
+        # Every runtime path relative, Latin and case-correct (a committed blob)
+        for name, data in files.items():
+            self.assertRegex(name, r'^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.[A-Za-z0-9]+$')
+            self.assertTrue(self.tree.has(name), name)
+            if name not in ('index.html', 'buildconfig.js'):
+                self.assertEqual(data, self.tree.read(name), name)
+        print(f'PASS playgama: {len(files)} relative, Latin, case-correct runtime paths = committed blobs at {self.tree.revision}')
+        # The Bridge SDK stays external (the only external reference)
+        external = [r for r in parse(html.decode('utf-8')).refs if re.match(r'^(https?:)?//', r)]
+        self.assertEqual(external, [SDK_URLS['playgama']])
+        print('PASS playgama: the only external reference is the Bridge SDK ' + SDK_URLS['playgama'])
+        # playgama-bridge-config.json ships at the root, as in release-20261014
+        self.assertIn('playgama-bridge-config.json', files)
+        config = json.loads(files['playgama-bridge-config.json'])
+        self.assertIs(config['disableLoadingLogo'], True)
+        self.assertEqual(config['advertisement']['minimumDelayBetweenInterstitial'], 120)
+        self.assertEqual(config['advertisement']['interstitial']['placementFallback'], 'game_over')
+        baseline = ROOT / 'artifacts' / 'release-20261014' / 'grapnelninja-playgama.zip'
+        if baseline.is_file():
+            with zipfile.ZipFile(baseline) as z:
+                self.assertEqual(config, json.loads(z.read('playgama-bridge-config.json')))
+            print('PASS playgama: playgama-bridge-config.json at the root, equal to the release-20261014 one')
+        self.assertIn("configFilePath: CONFIG_FILE", files['platform/backends/playgama.js'].decode())
+        # Every mode, no external analytics, size limit
+        self.assertEqual(build_config(files['buildconfig.js'].decode('utf-8'))['modes'], ['grapple_over', 'bad', 'classic'])
+        print('PASS playgama: modes grapple_over, bad, classic (boot starts Grapple Over)')
+        # Code only: the backends' comments name the GameAnalytics ban
+        code = lambda d: '\n'.join(l for l in d.decode('utf-8').splitlines() if not l.strip().startswith('//'))
+        ga = [n for n, d in files.items() if n.endswith(('.js', '.html')) and 'gameanalytics' in code(d).lower()]
+        self.assertEqual(ga, [])
+        print('PASS playgama: no GameAnalytics code in any shipped script or index.html (analytics backend none.js)')
+        self.assertLessEqual(len(zip_bytes), 300 * 1024 * 1024)
+        print(f'PASS playgama: zip {len(zip_bytes)} bytes <= 300 MiB')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -165,6 +165,8 @@
             let continueOffer
             // A pause request during an ad is applied to the next run.
             let hostPaused = false
+            // The host turned the game's audio off (PLATFORM.onAudio)
+            let hostAudioOff = false
             let pauseAfterAd = false
             // A full-screen ad is on top: gameplay and input are frozen
             let adOpen = false
@@ -784,13 +786,18 @@
             // player (the host resume only unmutes and lifts the block)
             PLATFORM.onPause(function(isPaused) {
                 hostPaused = isPaused
-                GAME_AUDIO.mute('host', isPaused)
+                GAME_AUDIO.mute('host', isPaused || hostAudioOff)
                 if (isPaused)
                     pauseRun()
                 else if (bootComplete && !menu.opened() && !continueOffer.visible &&
                     !adOpen && !interstitialPending && !isViewRotated() &&
                     document.visibilityState !== 'hidden')
                     reuseTimeInGame()
+            })
+            // Host audio off mutes (without pausing) until it is back on
+            PLATFORM.onAudio(function(isEnabled) {
+                hostAudioOff = !isEnabled
+                GAME_AUDIO.mute('host', hostPaused || hostAudioOff)
             })
             PLATFORM.onAdState(function(state) {
                 if (state == 'opened')

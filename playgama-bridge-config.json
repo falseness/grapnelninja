@@ -1,0 +1,14 @@
+{
+    "disableLoadingLogo": true,
+    "advertisement": {
+        "minimumDelayBetweenInterstitial": 120,
+        "interstitial": {
+            "placementFallback": "game_over",
+            "placements": [
+                {
+                    "id": "game_over"
+                }
+            ]
+        }
+    }
+}
