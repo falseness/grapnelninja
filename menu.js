@@ -588,12 +588,15 @@ class Menu
         {
             menu.unPause()
         })
-        this.modeButtons = ['grapple_over', 'bad', 'classic'].map(mode =>
-            new Button(
+        // One button per mode of this build (BUILD_CONFIG.modes); none in a
+        // single-mode build
+        const modes = ['grapple_over', 'bad', 'classic'].filter(buildHasMode)
+        this.modeButtons = (modes.length > 1 ? modes : []).map(mode =>
+            Object.assign(new Button(
                 {x: 0, y: 0, width: 1, height: 1, clickable: false,
                  stroke: STYLE.colors.ui.buttonDangerStroke, neon: true},
                 {text: '', fill: STYLE.colors.ui.buttonText},
-                () => this.selectMode(mode)))
+                () => this.selectMode(mode)), {mode}))
         this.relabelPauseSwitch()
     }
     getPausePanel()
@@ -663,9 +666,9 @@ class Menu
             buttonHeight
         )
         const modeWidth = panel.width * 0.29
+        const modeX = i => centerX + (i - (this.modeButtons.length - 1) / 2) * panel.width * 0.32
         this.modeButtons.forEach((button, i) => this.layoutPauseButton(button,
-            centerX + (i - 1) * panel.width * 0.32,
-            panel.y + panel.height * 0.52, modeWidth, buttonHeight))
+            modeX(i), panel.y + panel.height * 0.52, modeWidth, buttonHeight))
 
         const rowY = panel.y + panel.height * 0.72
         const resumeFontSize = parseFloat(this.resume.text.fontSize)
@@ -698,7 +701,7 @@ class Menu
         this.pauseTitleY = rows[0]
         this.layoutPauseButton(this.resume, centerX, rows[1], buttonWidth, buttonHeight)
         this.modeButtons.forEach((button, i) => this.layoutPauseButton(button,
-            centerX + (i - 1) * panel.width * 0.32, rows[2], modeWidth, buttonHeight))
+            modeX(i), rows[2], modeWidth, buttonHeight))
         this.pauseFpsCounterCheckbox.y = rows[3]
         this.timeInGame.y = rows[4]
     }
@@ -737,8 +740,9 @@ class Menu
     }
     selectMode(mode)
     {
-        // Selecting the current mode keeps the paused run intact.
-        if (mode === version) return
+        // Selecting the current mode keeps the paused run intact; a mode
+        // outside this build (BUILD_CONFIG.modes) is refused.
+        if (mode === version || !buildHasMode(mode)) return
         PROGRESS.flushClimb(true)
         PROGRESS.save()
         leaveFinishedRun(() =>
@@ -749,11 +753,10 @@ class Menu
     }
     relabelPauseSwitch()
     {
-        const modes = ['grapple_over', 'bad', 'classic']
-        this.modeButtons.forEach((button, i) =>
+        this.modeButtons.forEach(button =>
         {
-            button.text.text = I18N.t('mode.' + modes[i])
-            button.background.stroke = modes[i] === version ?
+            button.text.text = I18N.t('mode.' + button.mode)
+            button.background.stroke = button.mode === version ?
                 STYLE.colors.ui.primary : STYLE.colors.ui.buttonDangerStroke
         })
     }
@@ -884,6 +887,11 @@ class ContinueOffer
     {
         return version === 'bad' ? 'classic' : 'bad'
     }
+    // The switch is shown only when the build has the other mode
+    hasSwitch()
+    {
+        return buildHasMode(this.otherVersion())
+    }
     relabel(w, h)
     {
         this.switchButton.text.text = I18N.t(version === 'bad' ? 'menu.chillVersion' : 'menu.mainVersion')
@@ -937,10 +945,11 @@ class ContinueOffer
     {
         this.restartButton.clickable = this.switchButton.clickable =
             this.fpsCounterCheckbox.clickable = this.visible && !this.adPending
+        if (!this.hasSwitch()) this.switchButton.clickable = false
     }
     click(coord)
     {
-        return this.restartButton.isClickOnButton(coord) || this.switchButton.isClickOnButton(coord) ||
+        return this.restartButton.isClickOnButton(coord) || (this.hasSwitch() && this.switchButton.isClickOnButton(coord)) ||
             this.fpsCounterCheckbox.isClickOnButton(coord)
     }
     draw()
@@ -953,7 +962,7 @@ class ContinueOffer
         this.score.draw()
         if (this.adPending) ctx.globalAlpha = 0.4
         this.restartButton.draw()
-        this.switchButton.draw()
+        if (this.hasSwitch()) this.switchButton.draw()
         this.fpsCounterCheckbox.draw()
         LANGUAGE_BUTTON.draw()
         ctx.restore()
@@ -1185,10 +1194,10 @@ const CLIMB_UI = {
         ] : [
             [stats.completed ? 'climb.replay' : 'pause.resume', () => stats.completed ? this.restart() : menu.unPause()],
             ['climb.restart', () => {this.confirming=true; redrawOverlays()}],
-            ['mode.bad', () => menu.selectMode('bad')],
-            ['mode.classic', () => menu.selectMode('classic')]
+            ...this.modeActions()
         ]
-        // The grapnel toggle goes last (button indexes 0-3 stay as they were);
+        // The grapnel toggle goes last (button indexes 0-3 stay as they were
+        // in a build with every mode);
         // a run in progress keeps its position, time and best across a switch.
         const grapnel = this.showsFps(), note = this.offering || grapnel
         if (grapnel) actions.push([floors[0].grapnelMode === 'double' ? 'climb.grapnelDouble' : 'climb.grapnelSingle',
@@ -1375,6 +1384,11 @@ const CLIMB_UI = {
         ctx.stroke()
         ctx.restore()
     },
+    // The other modes' buttons of the pause and win screens, for the modes in
+    // this build (BUILD_CONFIG.modes); none in a single-mode build
+    modeActions() {
+        return ['bad', 'classic'].filter(buildHasMode).map(mode => ['mode.' + mode, () => menu.selectMode(mode)])
+    },
     // Long run only: back to the intended single grapnel, from a fresh climb
     tryDefault() {
         setGrapnelMode('single')
@@ -1397,10 +1411,11 @@ const CLIMB_UI = {
         const actions = [
             ['climb.replay', () => this.restart()],
             ['climb.restart', () => {this.confirming=true; redrawOverlays()}],
-            ['mode.bad', () => menu.selectMode('bad')],
-            ['mode.classic', () => menu.selectMode('classic')]
+            ...this.modeActions()
         ]
-        const gridRows = 4 / cols, rows = gridRows + (long ? 1 : 0)
+        // A single-mode build has two buttons: one row, centred
+        const used = Math.min(cols, actions.length), usedW = used * bw + (used - 1) * gap
+        const gridRows = Math.ceil(actions.length / cols), rows = gridRows + (long ? 1 : 0)
         const bottom = Math.min(h - gap, lang.y - gap)
         const gridTop = bottom - rows * bh - (rows - 1) * gap
         const fitLabel = (b, text, width) => {
@@ -1408,7 +1423,7 @@ const CLIMB_UI = {
             b.text.fontSize = getArcadeFont(size)
         }
         this.buttons = actions.map(([key, action], i) => {
-            const x = w/2 - gridW/2 + bw/2 + (i % cols) * (bw + gap)
+            const x = w/2 - usedW/2 + bw/2 + (i % cols) * (bw + gap)
             const y = gridTop + bh/2 + Math.floor(i / cols) * (bh + gap)
             const b = new Button({x, y, width:bw, height:bh, neon:true},
                 {text:I18N.t(key), fill:STYLE.colors.ui.buttonText}, action)

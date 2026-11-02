@@ -3,6 +3,17 @@ Html 5 konva simple game
 
 Mobile play supports landscape orientation. Portrait shows a rotate prompt and pauses an active run; rotate back and tap Resume to continue.
 
+## Build configuration (`buildconfig.js`)
+
+`buildconfig.js` (loaded before the platform backend) holds `BUILD_CONFIG`.
+The repo default is the dev build: `platform: 'local'`, all three modes
+(`['grapple_over', 'bad', 'classic']`). A release build replaces that one file.
+With `modes: ['grapple_over']` (itch.io, GamePix, Y8) the game boots Grapple
+Over, the pause, death and win screens show no mode buttons or switch,
+`menu.selectMode` refuses other modes and `startGame` never enters one. The
+other modes stay in the code (Playgama keeps them). Test:
+`python3 tools/test_single_mode_build.py -v`.
+
 ## Regression
 
 Every ticket runs the whole regression: `python3 tools/run_regression.py --out artifacts/TASK-NNN/regression --skip-slow`. The runner runs every `tools/test_*.py` (sorted), minus `EXCLUDE` in `tools/run_regression.py`, which lists a reason for each excluded suite and is empty. A new suite is picked up automatically, and a red suite gets fixed, not excluded. It runs each suite with cwd `tools/`, points its evidence dirs at absolute paths under `OUT/ev/<suite>`, writes `OUT/<suite>.log` plus one JSON line per suite in `OUT/summary.jsonl`, and exits 1 when any suite fails. `--skip-slow` leaves out the suites in `SLOW`, each of which takes more than 10 min: `test_grapple_over_visuals`, `test_grapple_over_redesign`, `test_grapple_over_sections`, `test_grapple_over_regression`, `test_route_shortcuts`, `test_opening_jump_variety`, `test_extended_opening`, `test_level_route_arrows` and `test_purple_route`. With `--skip-slow` a run takes about 2 h. A full run, without `--skip-slow`, takes about 14 to 16 h, because `test_grapple_over_sections` alone takes about 6 h (190 tests) and `test_route_shortcuts` 1.4 to 2.7 h (TASK-773, TASK-774); run it detached. Each suite gets `TIMEOUT` (1 h), or its `TIMEOUTS` entry (`test_grapple_over_sections` 8 h, `test_route_shortcuts` and `test_grapple_over_regression` 6 h, `test_grapple_over_redesign` 3 h, `test_opening_jump_variety` and `test_grapple_over_visuals` 2 h). `--timeout S` sets one limit for every suite. `--only NAME ...` runs just the named suites (`module` or `module.Class`).

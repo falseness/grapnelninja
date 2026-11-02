@@ -95,6 +95,7 @@
         <script src = "gameoptions.js"></script>
         <script src = "style.js"></script>
         <script src = "render/glowsprites.js"></script>
+        <script src = "buildconfig.js"></script>
         <script src = "platform/backends/local.js"></script>
         <script src = "platform.js"></script>
         <script src = "analytics/backends/none.js"></script>
@@ -283,7 +284,7 @@
                 // (or starts at the base). Its level_started waits in PLATFORM's lifecycle queue
                 // until game_ready has been delivered.
                 const shouldPause = hostPaused || isViewRotated() || document.visibilityState === 'hidden'
-                startGame('grapple_over')
+                startGame(buildBootMode())
                 if (shouldPause && !menu.gamePaused)
                 {
                     draw()
@@ -311,6 +312,9 @@
             {
                 if (!Object.hasOwn(MODE_DEFINITIONS, _v))
                     throw new Error('Unknown game mode: ' + _v)
+                // A mode outside this build (BUILD_CONFIG.modes) is never entered
+                if (!buildHasMode(_v))
+                    _v = buildBootMode()
                 PROGRESS.flushClimb(true)
                 reuseTimeInGame()
                 resetPhysicsTiming()
