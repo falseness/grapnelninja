@@ -27,14 +27,15 @@ aborted and recorded.
 
 Viewports: desktop 1920x1080, 1366x768, 1280x720 at DPR 1 and 2
 (Chromium); phones from Playwright's device list, iPhone 13 (WebKit) and
-Pixel 7 (Chromium), landscape and portrait. 4 portals x 10 cells.
+Pixel 7 (Chromium), landscape and portrait. Square windows (Playgama 1.6.8): 800x800 at
+DPR 1 and 1080x1080 at DPR 2 (Chromium). 4 portals x 12 cells.
 
 Checks per cell (all must hold):
 - frame: the game iframe box is the portal's intended size, and the game
   document's window is exactly that box (no border, no inner scroll).
 - canvas: the canvas CSS rect equals the rect computed here from the frame
   size (gameoptions.js rules re-derived in Python: logical aspect clamped to
-  [4:3, 2:1] on desktop, uncapped on touch; centred letterbox), and on
+  [1:1, 2:1] on desktop, uncapped on touch; centred letterbox), and on
   screen (getBoundingClientRect, in the host page) it sits inside the frame.
 - no_scroll: no scrollbars in the game document; also none in the host page
   for the full-window embeds.
@@ -58,6 +59,10 @@ Checks per cell (all must hold):
   Resume button (CLIMB_UI.buttons[0]) resumes the run.
 - itch desktop also: after itch's fullscreen button the canvas checks hold
   for the full viewport.
+- square (square cells; itch also in fullscreen): the canvas covers the
+  whole game iframe box (no letterbox bars) and every HUD, pause and
+  'Go back?' dialog element box (LAYOUT_PROBE) lies inside the canvas with
+  no overlaps.
 - errors: no uncaught errors, unhandled rejections, console errors, blocked
   or missing requests.
 
@@ -110,6 +115,9 @@ LOGICAL_HEIGHT = 1080
 TOL = 1.01   # CSS px
 
 DESKTOPS = [(w, h, dpr) for (w, h) in [(1920, 1080), (1366, 768), (1280, 720)] for dpr in (1, 2)]
+# Square (1:1) desktop windows (Playgama requirement 1.6.8): the game fills
+# the area, no letterbox bars, no clipped or overlapping elements
+SQUARES = [(800, 800, 1), (1080, 1080, 2)]
 PHONES = [('iphone13', 'iPhone 13', 'webkit'), ('pixel7', 'Pixel 7', 'chromium')]
 
 READY = ('typeof PLATFORM !== "undefined" && PLATFORM.environment !== "pending" && bootComplete'
@@ -158,6 +166,11 @@ TO_CANVAS = '([x, y]) => viewportCoordsToCanvasCoords({x, y})'
 MENU_BUTTON = '''() => { const b = menu.button.background, k = scale[version]
     return {x: (b.x + b.width / 2) * k, y: (b.y + b.height / 2) * k} }'''
 # CLIMB_UI (menu.js) lays out its buttons when the pause screen is drawn
+# The 'Go back?' dialog (CLIMB_UI.offerGoBack) drawn once, without its
+# analytics or pause side effects
+GO_BACK_DRAW = ('const c = CLIMB_UI, g = c.goingBack, w = c.goBackWorld; c.goingBack = true; '
+                'c.goBackWorld = floors[0]; try { menu.drawPauseScreen() } '
+                'finally { c.goingBack = g; c.goBackWorld = w }')
 RESUME_BUTTON = '''() => { menu.drawPauseScreen(); const b = CLIMB_UI.buttons[0].background
     return {x: b.x + b.width / 2, y: b.y + b.height / 2} }'''
 
@@ -166,7 +179,7 @@ def expected_layout(w, h, touch, dpr, resolution=1):
     """gameoptions.js getCanvasCssRect / configureCanvasViewport for a w x h window."""
     rotated = touch and w < h
     vw, vh = (h, w) if rotated else (w, h)
-    aspect = min(math.inf if touch else 2, max(4 / 3, vw / vh))
+    aspect = min(math.inf if touch else 2, max(1, vw / vh))
     lw = (math.floor if touch else round)(LOGICAL_HEIGHT * aspect)
     fit = min(vw / lw, vh / LOGICAL_HEIGHT)
     cw, ch = lw * fit, LOGICAL_HEIGHT * fit
@@ -230,6 +243,9 @@ def cells():
     for w, h, dpr in DESKTOPS:
         out.append({'cell': 'desktop-%dx%d@%d' % (w, h, dpr), 'kind': 'desktop', 'browser': 'chromium',
                     'context': {'viewport': {'width': w, 'height': h}, 'device_scale_factor': dpr}})
+    for w, h, dpr in SQUARES:
+        out.append({'cell': 'square-%dx%d@%d' % (w, h, dpr), 'kind': 'square', 'browser': 'chromium',
+                    'context': {'viewport': {'width': w, 'height': h}, 'device_scale_factor': dpr}})
     for short, device, browser in PHONES:
         for orient in ('landscape', 'portrait'):
             out.append({'cell': '%s-%s' % (short, orient), 'kind': orient, 'browser': browser,
@@ -292,7 +308,7 @@ class PortalDisplayTests(unittest.TestCase):
         if not cls.out:
             return
         cls.out.mkdir(parents=True, exist_ok=True)
-        (cls.out / 'matrix.json').write_text(json.dumps(cls.rows, indent=1) + '\n')
+        (cls.out / 'matrix.json').write_text(json.dumps(cls.rows, separators=(',', ':')) + '\n')
         for portal in PORTALS:
             rows = [r for r in cls.rows if r['portal'] == portal]
             if rows:
@@ -338,7 +354,7 @@ class PortalDisplayTests(unittest.TestCase):
 
     # -- measuring ------------------------------------------------------------
 
-    def measure(self, page, frame, intended, touch, dpr, full_window):
+    def measure(self, page, frame, intended, touch, dpr, full_window, square=False):
         """Geometry, HUD and scroll checks for the current state."""
         s = frame.evaluate(STATE)
         box = page.locator('#game_drop').bounding_box()
@@ -388,12 +404,40 @@ class PortalDisplayTests(unittest.TestCase):
         checks['dpr'] = {'ok': s['backing'] == exp['backing'] and s['resolution'] == 1,
                          'backing': s['backing'], 'expected': exp['backing'], 'dpr': s['dpr'],
                          'resolution': s['resolution']}
+        if square:
+            checks['square'] = self.square_check(frame, box, canvas_box, touch)
         return s, exp, checks
+
+    def square_check(self, frame, box, canvas_box, touch):
+        """1:1 window: the canvas covers the whole iframe box (no letterbox
+        bars) and every HUD / pause / Go back element box lies inside the
+        canvas without overlapping another."""
+        covers = canvas_box is not None and all(
+            close(canvas_box[k], box[k]) for k in ('x', 'y', 'width', 'height'))
+        screens = {}
+        for screen, code in (('hud', lm.DRAW['hud']), ('pause', lm.DRAW['pause']), ('goback', GO_BACK_DRAW)):
+            row, boxes = lm.evaluate(frame.evaluate(lm.PROBE, code), touch)
+            screens[screen] = {'clipped': row['clipped'], 'overlaps': row['overlaps'],
+                               'boxes': [[b['name'], round(b['x'], 1), round(b['y'], 1),
+                                          round(b['width'], 1), round(b['height'], 1)] for b in boxes]}
+        frame.evaluate('() => draw()')
+        ok = covers and all(v['boxes'] and not v['clipped'] and not v['overlaps'] for v in screens.values())
+        r = lambda b: b and [round(b[k], 1) for k in ('x', 'y', 'width', 'height')]
+        return {'ok': ok, 'covers': covers, 'iframeBox': r(box), 'canvasBox': r(canvas_box), **screens}
 
     def tap(self, page, frame, phone, point):
         """Real click/tap at a game point; returns where it landed in game units."""
         target = frame.evaluate(TO_VIEWPORT, [point['x'], point['y']])
         box = page.locator('#game_drop').bounding_box()
+        # A fixed embed wider than the window (itch's 960 px frame in an
+        # 800 px square window): scroll the host page, as a player would,
+        # until the aimed point is on screen
+        vp = page.viewport_size
+        dx = box['x'] + target['x'] - (vp['width'] - 1)
+        if dx > 0 or box['x'] + target['x'] < 0:
+            page.evaluate('(dx) => scrollBy(dx, 0)', dx + 40 if dx > 0 else box['x'] + target['x'] - 40)
+            page.wait_for_timeout(100)
+            box = page.locator('#game_drop').bounding_box()
         frame.evaluate('() => { window.__taps = [] }')
         # Mouse/touch client coordinates are whole CSS px: aim at the nearest
         # whole host pixel, so the landed point is the aimed one exactly
@@ -441,7 +485,8 @@ class PortalDisplayTests(unittest.TestCase):
                'viewport': [vp['width'], vp['height']], 'dpr': dpr, 'touch': phone,
                'embed': 'full-window' if full_window else '%dx%d iframe' % intended,
                'zip': str(self.zips[portal].relative_to(ROOT))}
-        s, exp, checks = self.measure(page, frame, intended, phone, dpr, full_window)
+        square = cell['kind'] == 'square'
+        s, exp, checks = self.measure(page, frame, intended, phone, dpr, full_window, square)
         portrait = cell['kind'] == 'portrait'
         checks['orientation'] = {
             'ok': (s['rotated'] and s['transform'] == 'rotate(90deg)' and s['promptVisible'] and
@@ -484,7 +529,7 @@ class PortalDisplayTests(unittest.TestCase):
                                     arg=[vp['width'], vp['height']], timeout=5000)
             page.wait_for_timeout(500)
             # The itch page itself keeps scrolling under the fullscreen element
-            s3, _, checks3 = self.measure(page, frame, (vp['width'], vp['height']), phone, dpr, False)
+            s3, _, checks3 = self.measure(page, frame, (vp['width'], vp['height']), phone, dpr, False, square)
             ftap = self.tap(page, frame, phone, frame.evaluate(MENU_BUTTON))
             checks['fullscreen'] = {'ok': all(c['ok'] for c in checks3.values()) and ftap['ok'],
                                     'checks': checks3, 'tap': ftap}

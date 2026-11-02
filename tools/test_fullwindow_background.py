@@ -295,13 +295,15 @@ class FullWindowBackgroundTests(unittest.TestCase):
         # rAF callbacks and game frames are counted apart: allow one frame each way
         self.assertGreaterEqual(run['paints'], (run['frames'] - 1) // 4)
         self.assertLessEqual(run['paints'], (run['frames'] + 1) // 4 + 1)
-        page.set_viewport_size({'width': 925, 'height': 925})
+        # A square window has no bars since TASK-876 (aspect floor 1:1): a
+        # portrait desktop window still letterboxes top and bottom
+        page.set_viewport_size({'width': 925, 'height': 1156})
         page.wait_for_function('''() => { const b = document.getElementsByClassName('window-bar')[0]
             return b.box && b.box.width == 925 && b.barsKey }''', timeout=60000)
         after = page.evaluate('''() => { const b = document.getElementsByClassName('window-bar')[0]
             return {paints: __barsPaints, key: b.barsKey, width: b.width, height: b.height, box: b.box} }''')
         self.assertGreater(after['paints'], run['paints'])
-        print(f'\n  2560x1080 run {json.dumps(run)}; after resize to 925x925 {json.dumps(after)}',
+        print(f'\n  2560x1080 run {json.dumps(run)}; after resize to 925x1156 {json.dumps(after)}',
               file=sys.stderr)
         if self.evidence:
             (self.out() / 'bars-cadence.json').write_text(json.dumps({'run': run, 'after_resize': after}))
