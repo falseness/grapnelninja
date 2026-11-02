@@ -561,9 +561,26 @@ class NoGrappleRenderTests(unittest.TestCase):
         old = git('show', f'{BASE_COMMIT}:render/tutorialhint.js')
         new = (ROOT / 'render/tutorialhint.js').read_text(encoding='utf-8')
         same = {}
+        # TASK-862 (77da1be) added telemetry only: the tutorial:grapple:completed call in press() and the
+        # once-per-page tutorial:grapple:shown block in runStarted() (shownSent gates nothing else). Re-pinned
+        # by TASK-879: those methods must equal the base once exactly that block is stripped (present exactly
+        # once); every other method stays byte-identical.
+        telemetry = {
+            'press': ("\n        // The step is done: the player threw the grapnel"
+                      "\n        ANALYTICS.design('tutorial:grapple:completed')"),
+            'runStarted': ("\n        // Once per page: the hint (one step, 'hold to grapple') is up"
+                           "\n        if (!this.shownSent)"
+                           "\n        {"
+                           "\n            this.shownSent = true"
+                           "\n            ANALYTICS.design('tutorial:grapple:shown')"
+                           "\n        }"),
+        }
         for name in ('drawBounce', 'drawDrag', 'press', 'advance', 'runStarted', 'draw'):
             a, b = method_source(old, name), method_source(new, name)
             self.assertIsNotNone(a, name)
+            if name in telemetry:
+                self.assertEqual(b.count(telemetry[name]), 1, b)
+                b = b.replace(telemetry[name], '')
             self.assertEqual(a, b, name)
             same[name] = hashlib.sha256(b.encode()).hexdigest()[:16]
         items = "{label: I18N.t('tutorial.legend.bounce'), w: 3.2, h: 3.2, draw: this.drawBounce}"

@@ -119,6 +119,16 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+    return climbDesign',
     '+}',
     '+',
+    # TASK-862 (77da1be): read-only fall-section helper for fall/goback/long-fall telemetry; its callers
+    # (recoverClimbFall, CLIMB_UI.offerGoBack, TELEMETRY.falling) run only in Grapple Over. Re-pinned by TASK-879.
+    '+// The section a fall counts against: the section of the last grapple catch,',
+    '+// the spawn section when there was none since the launch',
+    '+function climbFallSection()',
+    '+{',
+    '+    const world = floors[0]',
+    '+    return climbDesignRun(world.climbStats).section ?? world.level.sections[0].id',
+    '+}',
+    '+',
     '+// One design event per best height bucket reached for the first time this run',
     '+function reportClimbHeight(stats)',
     '+{',
@@ -142,7 +152,8 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+    // The fall counts against the section of the last catch (the spawn',
     '+    // section when there was none since the launch)',
     '+    const run = climbDesignRun(world.climbStats)',
-    '+    const fallSection = run.section ?? world.level.sections[0].id',
+    # TASK-862 (77da1be): same value through climbFallSection(); telemetry only. Re-pinned by TASK-879.
+    '+    const fallSection = climbFallSection()',
     "+    ANALYTICS.design('fall:' + fallSection)",
     "+    TELEMETRY.mark('fall', fallSection)",
     '+    run.section = null',
@@ -598,6 +609,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         changed = lines('index.html')
         # The full index.html diff since BASE_REV; TASK-774 re-pinned it after TASK-745..753 (platform/analytics wiring only).
         self.assertEqual(changed, [
+                                   # TASK-854: BUILD_CONFIG (repo default: every mode, so classic/bad boot and play as before); re-pinned by TASK-879
+                                   '+        <script src = "buildconfig.js"></script>',
                                    # TASK-745: the platform backend split
                                    '+        <script src = "platform/backends/local.js"></script>',
                                    # TASK-749..753: telemetry facade and its wiring (session/error/ad, progression, design, mode time, quit); covered by tools/test_analytics_*.py
@@ -609,12 +622,18 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+        <script src = "render/routearrows.js"></script>',
                                    # TASK-727: the ?visualsPerf=1 freeze recorder (instrumentation only).
                                    '+        <script src = "render/visualsperf.js"></script>',
+                                   # TASK-859: host audio-off flag (PLATFORM.onAudio mute only); re-pinned by TASK-879
+                                   '+            // The host turned the game\'s audio off (PLATFORM.onAudio)',
+                                   '+            let hostAudioOff = false',
                                    '+            let analyticsStarted = false',
                                    '+            watchAnalytics()',
                                    '+',
                                    '+            // Page errors -> ANALYTICS.error (10 unique messages per session);',
-                                   '+            // pagehide -> once per page: mode time flush, quit:<last event>,',
-                                   '+            // Fail for the section in progress, then ANALYTICS.sessionEnd last',
+                                   # TASK-861/862: pagehide also flushes play time, longest fall, quit-after-long-fall (telemetry only); re-pinned by TASK-879
+                                   '+            // pagehide -> once per page: mode time flush, play time, quit:<last event>,',
+                                   "+            // the session's longest fall, a quit soon after a long fall, the",
+                                   '+            // section height and Fail for the section and run in progress, then',
+                                   '+            // ANALYTICS.sessionEnd last',
                                    '+            function watchAnalytics()',
                                    '+            {',
                                    '+                const MAX_ERRORS = 10',
@@ -641,7 +660,9 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+                    if (ended)',
                                    '+                        return',
                                    '+                    ended = true',
-                                   '+                    for (const step of [() => TELEMETRY.flushModeTime(), () => TELEMETRY.sendQuit(),',
+                                   '+                    for (const step of [() => TELEMETRY.flushModeTime(), () => TELEMETRY.flushPlayTime(),',
+                                   "+                        () => TELEMETRY.sendQuit(), () => TELEMETRY.sendLongestFall('session'),",
+                                   '+                        () => TELEMETRY.sendQuitAfterLongFall(),',
                                    '+                        () => CLIMB_UI.abandonProgression()])',
                                    '+                        try { step() } catch (e) {}',
                                    '+                    ANALYTICS.sessionEnd()',
@@ -657,9 +678,18 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+                }',
                                    '+                PLATFORM.loadingProgress(25)',
                                    '+                PLATFORM.loadingProgress(50)',
+                                   # TASK-861: env:* start events (telemetry only); re-pinned by TASK-879
+                                   '+                TELEMETRY.sendEnvironment()',
                                    '+                await loadGrappleOverLevelAsset()',
                                    '+                PLATFORM.loadingProgress(90)',
                                    '+                PLATFORM.loadingProgress(100)',
+                                   # TASK-854: boot mode from BUILD_CONFIG (grapple_over in the repo build, as before) and startGame refuses
+                                   # modes outside the build (none in the repo build); re-pinned by TASK-879
+                                   "-                startGame('grapple_over')",
+                                   '+                startGame(buildBootMode())',
+                                   '+                // A mode outside this build (BUILD_CONFIG.modes) is never entered',
+                                   '+                if (!buildHasMode(_v))',
+                                   '+                    _v = buildBootMode()',
                                    # TASK-785: the save-rejected popup is gone, so startGame no longer removes it
                                    "-                document.getElementById('climb-save-notice')?.remove()",
                                    '+                PLATFORM.gameplayStart(version)',
@@ -673,6 +703,25 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    "+                    ANALYTICS.design('restart:' + version)",
                                    "+                    TELEMETRY.mark('restart')",
                                    '+                }',
+                                   # TASK-875: Grapple Over-only interstitial at its pauses (returns unless version === 'grapple_over'); re-pinned by TASK-879
+                                   '+            // Grapple Over has no death, so its interstitial plays at its own',
+                                   "+            // natural pauses: placement 'pause' (the player paused by the",
+                                   '+            // pause button or a pause key, never blur/host/rotation) and',
+                                   "+            // 'summit' (the summit screen). The backend decides whether one",
+                                   '+            // is due; while it plays the run stays paused and the pause menu',
+                                   '+            // ignores input (interstitialPending), usable again once the ad is',
+                                   '+            // closed, failed or skipped.',
+                                   '+            function showGrappleOverInterstitial(placement)',
+                                   '+            {',
+                                   "+                if (version !== 'grapple_over' || interstitialPending || !menu.gamePaused ||",
+                                   '+                    !PLATFORM.isInterstitialDue())',
+                                   '+                    return',
+                                   '+                interstitialPending = true',
+                                   '+                PLATFORM.showInterstitial(placement).then(() =>',
+                                   '+                {',
+                                   '+                    interstitialPending = false',
+                                   '+                })',
+                                   '+            }',
                                    '+                // A fresh start (first run or restart) launches upward, as',
                                    '+                // does a fall recovery; a continue or save restore does not.',
                                    '+                ninja.speedY = -getSpawnLaunchSpeed()',
@@ -687,7 +736,19 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+                    }',
                                    # TASK-721: a step can open the first-death offer's pause screen.
                                    '+                    // A step can open a pause screen (the first-death offer): keep it on top',
-                                   '+                    if (menu.gamePaused) menu.drawPauseScreen()'])
+                                   '+                    if (menu.gamePaused) menu.drawPauseScreen()',
+                                   # TASK-862: ui:lang design event (telemetry only); re-pinned by TASK-879
+                                   "+                ANALYTICS.design('ui:lang:' + I18N.language)",
+                                   # TASK-856/859: host pause/audio-off mute the game audio (GAME_AUDIO 'host'); no physics; re-pinned by TASK-879
+                                   '-            // Host pause pauses the run; resuming is left to the player',
+                                   '+            // Host pause pauses and mutes the run; resuming is left to the',
+                                   '+            // player (the host resume only unmutes and lifts the block)',
+                                   "+                GAME_AUDIO.mute('host', isPaused || hostAudioOff)",
+                                   '+            // Host audio off mutes (without pausing) until it is back on',
+                                   '+            PLATFORM.onAudio(function(isEnabled) {',
+                                   '+                hostAudioOff = !isEnabled',
+                                   "+                GAME_AUDIO.mute('host', hostPaused || hostAudioOff)",
+                                   '+            })'])
         self.evidence['cases']['modes'] = dict(seen, browserErrors=page.errors, unchangedSources=UNCHANGED,
                                                baseRev=BASE_REV, unchangedDiff=diff, indexHtmlChanges=changed)
 
