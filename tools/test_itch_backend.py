@@ -25,6 +25,10 @@ frame). Every other request is blocked and recorded. Checks:
   and saves in memory.
 Every test asserts 0 uncaught errors, 0 unhandled rejections and 0 console
 errors in the page and the game frame, and 0 blocked requests.
+The vendored GameAnalytics SDK (analytics/vendor/GameAnalytics.min.js) is
+served as an empty script, so the GameAnalytics backend stays a no-op and
+nothing reaches api.gameanalytics.com; tools/test_gameanalytics_backend.py
+covers that backend.
 
 ITCH_BACKEND_EVIDENCE_DIR=DIR writes itch-backend.json and itch-embed.png.
 
@@ -55,7 +59,8 @@ FRAME_W, FRAME_H = 960, 540
 # The flags itch.io's game frame needs; 'same-origin' keeps localStorage
 SANDBOX = ('allow-scripts allow-same-origin allow-pointer-lock allow-forms '
            'allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals')
-REWRITTEN = {'index.html', 'buildconfig.js'}
+REWRITTEN = {'index.html', 'buildconfig.js', 'analytics/backends/gameanalytics.js'}
+GA_SDK = 'analytics/vendor/GameAnalytics.min.js'
 PROBE_KEY = 'grapnelninja.itchProbe'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 LANG_KEY = 'grapnelninja.lang'
@@ -127,6 +132,8 @@ class ItchBackendTests(unittest.TestCase):
             return route.fulfill(content_type='text/html', body=host_html(self.sandbox))
         if url.startswith(GAME_BASE):
             name = url[len(GAME_BASE):].split('?')[0].split('#')[0]
+            if name == GA_SDK:
+                return route.fulfill(content_type='application/javascript', body='// GameAnalytics stub\n')
             if name in self.files:
                 suffix = Path(name).suffix
                 return route.fulfill(body=self.files[name],

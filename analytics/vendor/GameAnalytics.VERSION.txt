@@ -1,0 +1,12 @@
+GameAnalytics JavaScript SDK, vendored so the itch.io zip does not load a CDN.
+
+version:  5.0.0 (npm "gameanalytics" 5.0.0, GitHub release v5.0.0 of
+          https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT)
+file:     GameAnalytics.min.js = package/dist/GameAnalytics.min.js, unmodified
+sha256:   07ea2678cc45937c24c25f946cd428720d0981ff2278d0cd5a177db3f4518770
+tarball:  https://registry.npmjs.org/gameanalytics/-/gameanalytics-5.0.0.tgz
+          sha256 44a820fc68312b8d2496162ee84f6eb1d40d5d7370db66928b0337916ede6614
+licence:  MIT, Copyright (c) 2016 Game Analytics (GameAnalytics.LICENSE.txt,
+          shipped next to the SDK in the itch zip)
+globals:  window.gameanalytics (namespace with the EGA* enums and
+          gameanalytics.GameAnalytics) and window.GameAnalytics (command queue)

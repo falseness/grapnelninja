@@ -9,18 +9,23 @@ Builds the four zips from HEAD into a temp dir, then per portal:
   portal backend tag and it is the portal's (local.js stays as the shared
   base the stubs need, loaded before it); the portal SDK tag from
   docs/platform-sdk.md right before the backend tag and no other external
-  reference (none at all for itch); analytics backend none.js; buildconfig
+  reference (none at all for itch); analytics backend none.js, except itch:
+  the vendored GameAnalytics SDK + gameanalytics.js with GA_KEYS filled
+  (TASK-860, keys only in the itch zip); buildconfig
   modes ['grapple_over'] (itch, gamepix, y8) or every mode (playgama), the
   build id in BUILD_CONFIG and the manifest; y8 appId/gameId non-empty in
   the y8 zip and absent from every other zip; manifest file list, sizes and
   sha256 match the zip.
 - boot: the zip extracted to a temp dir and served over http, every external
-  request blocked (no portal SDK), boots into a running Grapple Over run
+  request blocked (no portal SDK; the itch zip's GameAnalytics SDK is served
+  as an empty script so nothing goes to api.gameanalytics.com), boots into a running Grapple Over run
   with the portal backend, a drawn canvas, and no uncaught page error, also
   after a grapple click and a second of play.
 
-Y8_APP_ID / Y8_GAME_ID come from the environment or, when unset, from
+Y8_APP_ID / Y8_GAME_ID / GA_GAME_KEY / GA_SECRET_KEY come from the
+environment or, when unset, from
 /root/credentials/grapnelninja/credentials.env (values are never printed).
+BUILD_RELEASE_REV=REV builds REV instead of HEAD (e.g. `git stash create`).
 BUILD_RELEASE_EVIDENCE_DIR=DIR writes boot-<portal>.png and boot.json there.
 
     python3 tools/test_build_release.py -v
@@ -62,12 +67,12 @@ VIEWPORT = {'width': 1280, 'height': 720}
 
 
 def y8_env():
-    """{'Y8_APP_ID', 'Y8_GAME_ID'} from the environment or the credentials file."""
-    env = {k: os.environ.get(k, '') for k in ('Y8_APP_ID', 'Y8_GAME_ID')}
+    """{'Y8_APP_ID', 'Y8_GAME_ID', 'GA_GAME_KEY', 'GA_SECRET_KEY'} from the environment or the credentials file."""
+    env = {k: os.environ.get(k, '') for k in ('Y8_APP_ID', 'Y8_GAME_ID', 'GA_GAME_KEY', 'GA_SECRET_KEY')}
     if all(env.values()) or not CREDENTIALS.exists():
         return env
     for line in CREDENTIALS.read_text().splitlines():
-        m = re.match(r'^\s*(?:export\s+)?(Y8_APP_ID|Y8_GAME_ID)=(.*)$', line)
+        m = re.match(r'^\s*(?:export\s+)?(Y8_APP_ID|Y8_GAME_ID|GA_GAME_KEY|GA_SECRET_KEY)=(.*)$', line)
         if m and not env[m.group(1)]:
             env[m.group(1)] = m.group(2).strip().strip('"\'')
     return env
@@ -108,8 +113,8 @@ class BuildReleaseTest(unittest.TestCase):
         cls.out = Path(tempfile.mkdtemp(prefix='build-release-'))
         cls.env = y8_env()
         if not all(cls.env.values()):
-            raise unittest.SkipTest('Y8_APP_ID / Y8_GAME_ID unavailable')
-        cls.tree = build_release.CommittedTree('HEAD')
+            raise unittest.SkipTest('Y8_APP_ID / Y8_GAME_ID / GA_GAME_KEY / GA_SECRET_KEY unavailable')
+        cls.tree = build_release.CommittedTree(os.environ.get('BUILD_RELEASE_REV', 'HEAD'))
         cls.manifests, cls.zips = {}, {}
         for portal in PORTALS:
             cls.manifests[portal] = build_release.build(portal, cls.out, env=cls.env, tree=cls.tree)
@@ -143,7 +148,9 @@ class BuildReleaseTest(unittest.TestCase):
                         prefixes.update(re.findall(r"""['"`](art/[A-Za-z0-9_./-]*)""", source))
                 for name in files:
                     referenced = (name == 'index.html' or name in refs or name in literals
-                                  or any(name.startswith(p) for p in prefixes))
+                                  or any(name.startswith(p) for p in prefixes)
+                                  # the MIT licence of the vendored GameAnalytics SDK
+                                  or (portal == 'itch' and name == build_release.GA_LICENSE))
                     self.assertTrue(referenced, f'{portal}: {name} is not referenced')
                     self.assertFalse(set(name.split('/')) & FORBIDDEN_PARTS, f'{portal}: {name}')
                     self.assertFalse(name.endswith(('.py', '.md')), f'{portal}: {name}')
@@ -177,9 +184,11 @@ class BuildReleaseTest(unittest.TestCase):
                     self.assertEqual([s for s, _ in external], [SDK_URLS[portal]])
                     self.assertEqual(srcs[i_backend - 1], SDK_URLS[portal])
                     self.assertEqual(external[0][1], portal == 'y8')  # only Y8's tag is async
-                self.assertIn('analytics/backends/none.js', srcs)
-                self.assertEqual([s for s in srcs if s.startswith('analytics/backends/')],
-                                 ['analytics/backends/none.js'])
+                analytics = build_release.ANALYTICS_BACKENDS[portal]
+                self.assertIn(analytics, srcs)
+                self.assertEqual([s for s in srcs if s.startswith('analytics/')],
+                                 [build_release.GA_SDK, analytics] if portal == 'itch' else [analytics])
+                self.assertEqual(srcs[srcs.index(analytics) + 1], 'analytics.js')
                 self.assertIn(f'platform/backends/{portal}.js', self.zips[portal])
                 for other in PORTALS:
                     if other != portal:
@@ -223,6 +232,22 @@ class BuildReleaseTest(unittest.TestCase):
                         self.assertFalse(secret in joined, f'y8 id found in the {portal} zip')
                         self.assertFalse(secret in zip_bytes, f'y8 id found in the {portal} zip bytes')
 
+    def test_04b_ga_keys_only_in_itch_zip(self):
+        secrets = [self.env['GA_GAME_KEY'].encode(), self.env['GA_SECRET_KEY'].encode()]
+        for portal in PORTALS:
+            zip_bytes = (self.out / portal / f'grapple-over-{portal}.zip').read_bytes()
+            manifest = (self.out / portal / 'manifest.json').read_bytes()
+            joined = b'\n'.join(self.zips[portal].values())
+            for i, secret in enumerate(secrets):
+                with self.subTest(portal=portal, key=('GA_GAME_KEY', 'GA_SECRET_KEY')[i]):
+                    self.assertFalse(secret in manifest, 'GA key in a manifest')
+                    if portal == 'itch':
+                        self.assertTrue(secret in self.zips['itch'][build_release.GA_BACKEND], 'GA key missing')
+                        self.assertEqual(joined.count(secret), 1, 'GA key outside gameanalytics.js')
+                    else:
+                        self.assertFalse(secret in joined, f'GA key found in the {portal} zip')
+                        self.assertFalse(secret in zip_bytes, f'GA key found in the {portal} zip bytes')
+
     def test_05_manifest_matches_zip(self):
         import hashlib
         for portal in PORTALS:
@@ -234,7 +259,8 @@ class BuildReleaseTest(unittest.TestCase):
                 self.assertEqual(m['zip_size'], len(zip_bytes))
                 self.assertEqual(m['zip_sha256'], hashlib.sha256(zip_bytes).hexdigest())
                 self.assertEqual(m['modes'], EXPECTED_MODES[portal])
-                self.assertEqual(m['analytics_backend'], 'analytics/backends/none.js')
+                self.assertEqual(m['analytics_backend'], build_release.ANALYTICS_BACKENDS[portal])
+                self.assertEqual(m['analytics_keys_injected'], portal == 'itch')
                 self.assertEqual(sorted(f['path'] for f in m['files']), sorted(self.zips[portal]))
                 for f in m['files']:
                     data = self.zips[portal][f['path']]
@@ -269,6 +295,8 @@ class BuildReleaseTest(unittest.TestCase):
                 stack.callback(context.close)
                 requests = []
                 context.on('request', lambda r: requests.append(r.url))
+                context.route(url + build_release.GA_SDK, lambda r: r.fulfill(
+                    content_type='application/javascript', body='// GameAnalytics stub\n'))
                 page = context.new_page()
                 errors = collect_errors(page)
                 page.goto(url + 'index.html')

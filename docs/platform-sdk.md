@@ -48,10 +48,16 @@ It ships index.html at the zip root plus every file index.html references and
 every committed file a shipped script names in a string literal
 (`leveldata.js`, `art/win-*.svg`); adds the SDK tag and backend tag above
 after `local.js` (kept: the stubs build on `LOCAL_PLATFORM_BACKEND`); keeps
-`analytics/backends/none.js`; rewrites `buildconfig.js` (modes
+`analytics/backends/none.js` except for itch.io, where it swaps that tag for
+the vendored GameAnalytics SDK plus `analytics/backends/gameanalytics.js`
+with the keys injected (see "GameAnalytics backend (itch.io)" below);
+rewrites `buildconfig.js` (modes
 `['grapple_over']` for itch.io, GamePix and Y8, every mode for Playgama;
 `Y8_APP_ID` / `Y8_GAME_ID` from the environment for Y8; `build` =
-`<sha12>-<commit date>`). Test: `tools/test_build_release.py`.
+`<sha12>-<commit date>`). The itch build needs `GA_GAME_KEY` /
+`GA_SECRET_KEY` in the environment, the y8 build `Y8_APP_ID` / `Y8_GAME_ID`
+(`set -a; . /root/credentials/grapnelninja/credentials.env; set +a`).
+Test: `tools/test_build_release.py`.
 
 ## Facade method x portal SDK call
 
@@ -137,10 +143,9 @@ itch.io), tools/test_gamepix_backend.py, tools/test_y8_backend.py, tools/test_pl
 - **No GameAnalytics (or any third-party analytics) on GamePix.**
 - **No GameAnalytics (or any external analytics) on Playgama** — only
   `bridge.analytics.send`.
-- GameAnalytics is allowed on itch.io, Y8 and local builds: put
-  `gameanalytics.GameAnalytics.initialize(gameKey, secretKey)`,
-  `addProgressionEvent` / `addDesignEvent` / `addErrorEvent` / `addAdEvent`
-  inside that backend's `track` / `startup` inner methods only.
+- GameAnalytics is allowed on itch.io, Y8 and local builds; it ships on
+  **itch.io only** (user decision), through the analytics backend
+  `analytics/backends/gameanalytics.js` (below), never in a platform backend.
   Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
 
 ## Telemetry facade (GameAnalytics backend)
@@ -165,10 +170,9 @@ dropped; error messages <= 8000 chars), records it in `ANALYTICS.debugLog`
 - **GamePix and Playgama: the analytics backend must stay `none`.** Their
   rules forbid third-party analytics (Playgama telemetry goes through
   `bridge.analytics.send` in the platform backend's `track` instead).
-- **itch.io and Y8 may swap in a GameAnalytics backend**: copy `none.js` to
-  e.g. `analytics/backends/gameanalytics.js`, fill each inner method from its
-  `// REPLACE:` marker, load the GameAnalytics SDK and swap the
-  `analytics/backends/none.js` script tag. Nothing else changes.
+- **itch.io ships the GameAnalytics backend** (Y8 would be allowed but
+  stays on `none`): see "GameAnalytics backend (itch.io)" below. The dev
+  index.html and every other build stay on `none.js`.
 - Call sites: boot sends `init({build: PLATFORM.buildVersion})` +
   `sessionStart()` once after `PLATFORM.init()`; `pagehide` sends one
   `sessionEnd()` per page; window `error` / `unhandledrejection` send
@@ -193,3 +197,45 @@ dropped; error messages <= 8000 chars), records it in `ANALYTICS.debugLog`
   in this order: the mode time flush, `design('quit:<type>:<sectionId>')`,
   `progression('Fail', mode, sectionId)` for a section in progress, then
   `sessionEnd()` last.
+
+## GameAnalytics backend (itch.io)
+
+`analytics/backends/gameanalytics.js` (TASK-860) is `none.js` with each
+inner method filled from its `// REPLACE:` marker. It talks to the vendored
+SDK `analytics/vendor/GameAnalytics.min.js`: GameAnalytics JavaScript SDK
+**5.0.0** (npm `gameanalytics` 5.0.0 = GitHub release v5.0.0), unmodified,
+**MIT** licence in `analytics/vendor/GameAnalytics.LICENSE.txt` (shipped in
+the itch zip next to the SDK); source URL and sha256 in
+`analytics/vendor/GameAnalytics.VERSION.txt`. No CDN is loaded.
+
+| Inner method | GameAnalytics call |
+| --- | --- |
+| `initialize({build})` | once per page: `configureBuild(BUILD_CONFIG.build \|\| build)` (the release id `<sha12>-<YYYYMMDD>`, <= 32 chars), then `initialize(GA_KEYS.gameKey, GA_KEYS.secretKey)`. Automatic session handling: GA starts the session itself when its init request answers |
+| `startSession()` / `endSession()` | `startSession()` (a no-op until GA's init answered) / `endSession()` (pagehide) |
+| `addProgressionEvent(status, p1, p2, p3, score)` | `addProgressionEvent(EGAProgressionStatus[status], p1, p2 \|\| '', p3 \|\| '', score?)` (score only when a number) |
+| `addDesignEvent(id, value)` | `addDesignEvent(id, value?)` (value only when a number) |
+| `addErrorEvent(severity, message)` | `addErrorEvent(EGAErrorSeverity[Debug..Critical], message)` |
+| `addAdEvent(action, type, sdkName, placement)` | `addAdEvent(EGAAdAction[show -> Show, failed_show -> FailedShow, reward_received -> RewardReceived, clicked -> Clicked], EGAAdType[interstitial -> Interstitial, rewarded -> RewardedVideo, ...], sdkName lower-case, placement \|\| 'none')`; other actions/types dropped |
+
+Without both keys or without the SDK every method is a no-op; a throwing SDK
+is caught (one `console.warn` per method) and never reaches the game.
+
+**Keys.** The repo file has `var GA_KEYS = {gameKey: '', secretKey: ''}`
+and never holds a key. `tools/build_release.py --portal itch` (or `all`)
+reads `GA_GAME_KEY` (32 alphanumerics) and `GA_SECRET_KEY` (40) from the
+environment (`set -a; . /root/credentials/grapnelninja/credentials.env;
+set +a`), refuses to build itch without them, rewrites that one line in the
+itch zip's copy only, and swaps the itch index.html tag
+`analytics/backends/none.js` for `analytics/vendor/GameAnalytics.min.js` +
+`analytics/backends/gameanalytics.js`. The manifest records
+`analytics_backend` and `analytics_keys_injected`, never the values. The
+keys end up in a public client-side file, which is how GameAnalytics' JS SDK
+works; they are kept out of git and of the other portals' zips.
+
+Tests: `tools/test_gameanalytics_backend.py` (built itch zip with a
+recording mock SDK: boot order and keys, facade -> GA mapping, throwing and
+missing SDK, repo file is a no-op), `tools/scan_ga_keys.py --out FILE` (key
+counts per zip / manifest / git, counts only), `tools/smoke_gameanalytics.py
+--out FILE` (the real SDK against api.gameanalytics.com, URLs redacted; it
+sends one real session). test_itch_backend and test_build_release serve the
+SDK as an empty script so they never reach GameAnalytics.

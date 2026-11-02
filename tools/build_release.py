@@ -22,15 +22,21 @@ branch scripts):
   and the portal backend tag go right after platform/backends/local.js.
   local.js stays as the shared base library: every portal stub builds on
   LOCAL_PLATFORM_BACKEND and then redefines PLATFORM_BACKEND, so the portal
-  file is the build's platform backend. The analytics backend stays
-  analytics/backends/none.js.
+  file is the build's platform backend.
+- analytics: itch swaps the analytics/backends/none.js tag for the vendored
+  GameAnalytics SDK (analytics/vendor/GameAnalytics.min.js, its licence file
+  ships next to it) plus analytics/backends/gameanalytics.js, whose
+  'var GA_KEYS = ...' line gets GA_GAME_KEY / GA_SECRET_KEY from the
+  environment (itch only; required there). Every other portal keeps none.js
+  (GamePix and Playgama forbid third-party analytics).
 - buildconfig.js is rewritten: platform, modes (['grapple_over'] for itch,
   gamepix and y8; every mode for playgama), y8 ids (Y8_APP_ID / Y8_GAME_ID
   from the environment, y8 only; required there) and build (the build id,
   '<12-char commit sha>-<commit date YYYYMMDD>').
 - manifest.json: portal, build id, revision, modes, zip size and sha256,
   and the per-file list (path, size, sha256). Credential values never go in
-  the manifest or the build output, only into the y8 zip's buildconfig.js.
+  the manifest or the build output, only into the y8 zip's buildconfig.js
+  and the itch zip's analytics/backends/gameanalytics.js.
 """
 import argparse
 import hashlib
@@ -60,6 +66,14 @@ SDK_TAGS = {
     'playgama': '<script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>',
 }
 ANALYTICS_TAG = '<script src = "analytics/backends/none.js"></script>'
+GA_SDK = 'analytics/vendor/GameAnalytics.min.js'
+GA_LICENSE = 'analytics/vendor/GameAnalytics.LICENSE.txt'
+GA_BACKEND = 'analytics/backends/gameanalytics.js'
+ANALYTICS_BACKENDS = {'itch': GA_BACKEND, 'gamepix': 'analytics/backends/none.js',
+                      'y8': 'analytics/backends/none.js', 'playgama': 'analytics/backends/none.js'}
+GA_KEYS_LINE = re.compile(r'^var GA_KEYS = .*$', re.M)
+GA_KEY_FORMAT = {'GA_GAME_KEY': re.compile(r'^[A-Za-z0-9]{32}$'),
+                 'GA_SECRET_KEY': re.compile(r'^[A-Za-z0-9]{40}$')}
 MODES = {'itch': ['grapple_over'], 'gamepix': ['grapple_over'],
          'y8': ['grapple_over'], 'playgama': ALL_MODES}
 CONFIG_LINE = re.compile(r'^const BUILD_CONFIG = .*$', re.M)
@@ -195,7 +209,12 @@ def portal_html(html, portal):
     if SDK_TAGS[portal]:
         tags.append(SDK_TAGS[portal])
     tags.append(BACKEND_TAG.format(portal=portal))
-    return html.replace(LOCAL_TAG, ('\n' + indent).join(tags))
+    html = html.replace(LOCAL_TAG, ('\n' + indent).join(tags))
+    if ANALYTICS_BACKENDS[portal] == GA_BACKEND:
+        indent = re.search(r'^([ \t]*)' + re.escape(ANALYTICS_TAG), html, re.M).group(1)
+        tags = [f'<script src = "{GA_SDK}"></script>', f'<script src = "{GA_BACKEND}"></script>']
+        html = html.replace(ANALYTICS_TAG, ('\n' + indent).join(tags))
+    return html
 
 
 def js_string(value):
@@ -213,13 +232,21 @@ def portal_buildconfig(source, portal, build_id, y8_ids):
     return CONFIG_LINE.sub(lambda _m: line, source)
 
 
+def ga_backend(source, keys):
+    """gameanalytics.js with the GA_KEYS line filled from (game key, secret key)."""
+    if len(GA_KEYS_LINE.findall(source)) != 1:
+        raise ValueError(f'{GA_BACKEND} must have exactly one "var GA_KEYS = " line')
+    line = f'var GA_KEYS = {{gameKey: {js_string(keys[0])}, secretKey: {js_string(keys[1])}}}'
+    return GA_KEYS_LINE.sub(lambda _m: line, source)
+
+
 def refused(path):
     parts = path.split('/')
     return (any(part in EXCLUDED_DIRS for part in parts)
             or path.endswith(EXCLUDED_SUFFIXES) or not LATIN_NAME.match(path))
 
 
-def runtime_files(tree, portal, y8_ids):
+def runtime_files(tree, portal, y8_ids, ga_keys=('', '')):
     """{path: bytes} of the portal build."""
     html = portal_html(tree.read('index.html').decode('utf-8'), portal)
     files = {'index.html': html.encode('utf-8')}
@@ -231,6 +258,9 @@ def runtime_files(tree, portal, y8_ids):
         files[path] = tree.read(path)
     files['buildconfig.js'] = portal_buildconfig(
         files['buildconfig.js'].decode('utf-8'), portal, tree.build_id(), y8_ids).encode('utf-8')
+    if GA_BACKEND in files:
+        files[GA_BACKEND] = ga_backend(files[GA_BACKEND].decode('utf-8'), ga_keys).encode('utf-8')
+        files[GA_LICENSE] = tree.read(GA_LICENSE)
     bad = sorted(p for p in files if refused(p))
     if bad:
         raise ValueError(f'refused paths in the {portal} build: {bad}')
@@ -262,13 +292,28 @@ def y8_ids_for(portal, env):
     return app_id, game_id
 
 
+def ga_keys_for(portal, env):
+    if ANALYTICS_BACKENDS[portal] != GA_BACKEND:
+        return '', ''
+    keys = []
+    for name in ('GA_GAME_KEY', 'GA_SECRET_KEY'):
+        value = env.get(name, '').strip()
+        if not value:
+            raise SystemExit(f'{portal} build needs GA_GAME_KEY and GA_SECRET_KEY in the environment '
+                             '(set -a; . /root/credentials/grapnelninja/credentials.env; set +a)')
+        if not GA_KEY_FORMAT[name].match(value):
+            raise SystemExit(f'{name} does not look like a GameAnalytics key (value not printed)')
+        keys.append(value)
+    return tuple(keys)
+
+
 def build(portal, out=DEFAULT_OUT, rev='HEAD', env=None, tree=None):
     """Write out/<portal>/grapple-over-<portal>.zip + manifest.json; return the manifest."""
     if portal not in PORTALS:
         raise ValueError(f'unknown portal {portal!r}')
     env = os.environ if env is None else env
     tree = tree or CommittedTree(rev)
-    files = runtime_files(tree, portal, y8_ids_for(portal, env))
+    files = runtime_files(tree, portal, y8_ids_for(portal, env), ga_keys_for(portal, env))
     data = archive(files)
     folder = Path(out) / portal
     folder.mkdir(parents=True, exist_ok=True)
@@ -282,7 +327,8 @@ def build(portal, out=DEFAULT_OUT, rev='HEAD', env=None, tree=None):
         'modes': MODES[portal],
         'platform_backend': f'platform/backends/{portal}.js',
         'sdk_tag': SDK_TAGS[portal],
-        'analytics_backend': 'analytics/backends/none.js',
+        'analytics_backend': ANALYTICS_BACKENDS[portal],
+        'analytics_keys_injected': ANALYTICS_BACKENDS[portal] == GA_BACKEND,
         'zip': zip_path.name,
         'zip_size': len(data),
         'zip_sha256': sha256(data),
