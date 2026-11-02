@@ -319,8 +319,13 @@ class Grapnel
             
             // A snapped corner may be reported by both adjoining edges. Do not
             // grow the rope with duplicate contacts while iterating its segments.
-            if (version === 'grapple_over' && this.pos.some(point =>
-                point[2] === element && Math.hypot(point[0] - coords.x, point[1] - coords.y) < 1e-7))
+            // Classic modes: a segment that ends on (or just inside) an element
+            // edge hits that edge at its own end point; that is the same contact,
+            // not a new wrap (TASK-882: two identical points on a moving cube).
+            const sameContact = point => point !== undefined && point[2] === element &&
+                Math.hypot(point[0] - coords.x, point[1] - coords.y) < 1e-7
+            if (version === 'grapple_over' ? this.pos.some(sameContact) :
+                sameContact(this.pos[index - 1]) || sameContact(this.pos[index]))
                 return
             countClimbGrapple(this.grappled)
             recordClimbCheckpoint(this.grappled, coords.x, coords.y, element)
