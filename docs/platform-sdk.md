@@ -39,6 +39,20 @@ For a portal build add the portal SDK tag and the portal stub after `local.js`
 `tools/test_platform_backends.py` does exactly this swap with a Playwright
 route for all five backends.
 
+### Release zips
+
+`python3 tools/build_release.py --portal itch|gamepix|y8|playgama|all [--out DIR]`
+builds `DIR/<portal>/grapple-over-<portal>.zip` plus `manifest.json` (default
+DIR `artifacts/release-grapple-over`) from the git blobs of HEAD (`--rev`).
+It ships index.html at the zip root plus every file index.html references and
+every committed file a shipped script names in a string literal
+(`leveldata.js`, `art/win-*.svg`); adds the SDK tag and backend tag above
+after `local.js` (kept: the stubs build on `LOCAL_PLATFORM_BACKEND`); keeps
+`analytics/backends/none.js`; rewrites `buildconfig.js` (modes
+`['grapple_over']` for itch.io, GamePix and Y8, every mode for Playgama;
+`Y8_APP_ID` / `Y8_GAME_ID` from the environment for Y8; `build` =
+`<sha12>-<commit date>`). Test: `tools/test_build_release.py`.
+
 ## Facade method x portal SDK call
 
 | facade method | itch.io | GamePix v3 (`GamePix`) | Y8 minimal SDK 2.x (`sdk = y8.sdk()`) | Playgama Bridge (`bridge`) |
