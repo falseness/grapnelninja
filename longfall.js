@@ -9,7 +9,8 @@ const LONG_FALL_MESSAGES = Object.freeze(['OOPS...', 'GG!', 'BRUH.', 'NOT AGAIN.
 const LONG_FALL_HINT_KEY = 'climb.fallHint'
 // Grapple Over: a fall longer than this (measured like LONG_FALL_THRESHOLD)
 // with the go-back checkpoint above the player pauses on the 'Go back?'
-// dialog (CLIMB_UI.offerGoBack), once per catch.
+// dialog (CLIMB_UI.offerGoBack). After 'Keep falling' it is offered again
+// once the player is this far below the point where it was shown.
 const GO_BACK_FALL_THRESHOLD = 10000
 
 const LONG_FALL = (function()
@@ -23,8 +24,9 @@ const LONG_FALL = (function()
     let world = null, body = null
     let startY = 0, lastY = 0, armed = true, wasGrappled = false
     let event = null, emitted = 0
-    // The go-back offer: armed by a new world and by each new catch
-    let goBackArmed = true
+    // The go-back offer measures from here: the fall start (startY) until an
+    // offer is made, then the player's y at that offer
+    let goBackFromY = 0
 
     function pick(r)
     {
@@ -34,7 +36,7 @@ const LONG_FALL = (function()
     }
     function baseline()
     {
-        startY = lastY = ninja.y
+        startY = lastY = goBackFromY = ninja.y
         armed = true
         wasGrappled = grapnel.isGrappled()
     }
@@ -48,7 +50,6 @@ const LONG_FALL = (function()
                 if (world !== null) event = null
                 world = floors[0]
                 body = ninja
-                goBackArmed = true
                 baseline()
                 return
             }
@@ -56,10 +57,9 @@ const LONG_FALL = (function()
             // Only the moment of a new catch counts; holding the rope does not.
             const caught = grappled && !wasGrappled
             wasGrappled = grappled
-            if (caught) goBackArmed = true
             if (caught || y < lastY)
             {
-                startY = y
+                startY = goBackFromY = y
                 armed = true
             }
             else if (armed && y - startY > LONG_FALL_THRESHOLD)
@@ -74,21 +74,23 @@ const LONG_FALL = (function()
             }
             lastY = y
         },
-        // Recovery teleport: restart tracking at the spawn, keep the reaction.
+        // Recovery or go-back teleport: restart tracking at the new position,
+        // keep the reaction.
         restartTracking()
         {
             baseline()
         },
-        // The fall since the last catch (or the apex since it) is long enough
-        // for the go-back offer, which was not yet made for that catch.
+        // The fall since the last catch (or the apex since it), or since the
+        // last offer in this fall, is long enough for the go-back offer.
         goBackDue()
         {
-            return goBackArmed && lastY - startY > GO_BACK_FALL_THRESHOLD
+            return lastY - goBackFromY > GO_BACK_FALL_THRESHOLD
         },
-        // armed: false after the offer (until the next catch), true after a go back
-        setGoBackArmed(armed)
+        // The offer is made: the next one needs another GO_BACK_FALL_THRESHOLD
+        // below the player's y now (a new catch, a rise or a go back resets it).
+        goBackOffered()
         {
-            goBackArmed = armed
+            goBackFromY = ninja.y
         },
         clearEvent()
         {
@@ -97,7 +99,7 @@ const LONG_FALL = (function()
         // A replaced world (restart, reload, mode switch) owns no reaction.
         get event() { return floors[0] === world && ninja === body ? event : null },
         get emitted() { return emitted },
-        get goBackArmed() { return goBackArmed },
+        get goBackFromY() { return goBackFromY },
         tracking()
         {
             return {startY, lastY, armed, wasGrappled, displacement: lastY - startY}

@@ -135,14 +135,16 @@ class GoBackAdTests(unittest.TestCase):
         self.assertEqual(row['grapnel']['anchor'], [cp['anchorX'], cp['anchorY']])
         self.assertEqual(row['goBacks'], opened['goBacks'] + 1)
         self.assertEqual(row['recoveries'], 0)
-        self.assertTrue(row['goBackArmed'])
+        # The go back restarted the offer's reference at the hang (TASK-853)
+        self.assertLess(abs(row['ninja'][1] - row['goBackFromY']), 100)
 
     def assert_kept_falling(self, row, opened):
         self.assertFalse(row['paused'] or row['dialog'] or row['adPending'])
         self.assertEqual(row['goBacks'], opened['goBacks'])
         self.assertFalse(row['grapnel']['grappled'])
         self.assertGreater(row['ninja'][1], opened['ninja'][1])
-        self.assertFalse(row['goBackArmed'])
+        # TASK-853: the next offer is measured from the dialog point
+        self.assertEqual(row['goBackFromY'], opened['ninja'][1])
 
     def run_case(self, name, settle, went_back, analytics_result, keyboard=False):
         page = self.open()

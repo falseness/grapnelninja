@@ -1508,9 +1508,10 @@ const CLIMB_UI = {
     },
     // A fall of more than GO_BACK_FALL_THRESHOLD under the go-back checkpoint
     // (calcPhysics, before the spawn recovery): the run pauses, its clock
-    // stopped, until Go back or Keep falling. Not offered again until a new catch.
+    // stopped, until Go back or Keep falling. After Keep falling it is offered
+    // again GO_BACK_FALL_THRESHOLD below this point (or after a new catch).
     offerGoBack() {
-        LONG_FALL.setGoBackArmed(false)
+        LONG_FALL.goBackOffered()
         this.goingBack = true
         this.goBackWorld = floors[0]
         this.goBackFocus = 0
@@ -1547,7 +1548,8 @@ const CLIMB_UI = {
     returnBack() {
         this.goingBack = false
         // A press held through the answer cannot steer, release or throw
-        if (returnToCheckpoint()) LONG_FALL.setGoBackArmed(true)
+        // returnToCheckpoint restarts LONG_FALL tracking (and the offer's reference)
+        returnToCheckpoint()
         menu.unPause()
         redrawOverlays()
     },
