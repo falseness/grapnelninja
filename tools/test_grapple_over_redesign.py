@@ -10946,6 +10946,15 @@ class Task630Tests(unittest.TestCase):
     def metrics(self,p,w,h,dpr):
         p.cdp.send('Emulation.setDeviceMetricsOverride',dict(width=w,height=h,deviceScaleFactor=dpr,mobile=False))
         p.wait_for_timeout(220)
+        # The game re-lays out the canvas from a 100 ms debounced resize
+        # handler (index.html onViewportResize); under host load it can land
+        # after the fixed wait, leaving the backing store of the previous
+        # viewport. Wait until the live layout (style box + backing) follows
+        # the new viewport, then read everything in one evaluate (snapshot).
+        p.wait_for_function('''([w,h,dpr])=>{if(innerWidth!==w||innerHeight!==h||devicePixelRatio!==dpr)return false;
+          const r=getCanvasCssRect(),s=Math.min(devicePixelRatio,2)*BACKDROP.resolution;
+          return Math.abs(parseFloat(canvas.style.width)-r.width)<.01&&Math.abs(parseFloat(canvas.style.height)-r.height)<.01&&
+            Math.abs(canvas.width-r.width*s)<=.51&&Math.abs(canvas.height-r.height*s)<=.51}''',arg=[w,h,dpr],timeout=15000)
         r=self.snapshot(p)
         self.assertEqual(r['viewport'],[w,h]);self.assertEqual(r['dpr'],dpr)
         for i,k in enumerate(['width','height']):
