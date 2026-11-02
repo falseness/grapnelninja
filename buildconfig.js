@@ -13,6 +13,13 @@ function buildHasMode(mode)
 {
     return BUILD_CONFIG.modes.includes(mode)
 }
+// Whether the game may use the Escape key. Playgama (requirement 1.5.2)
+// reserves Escape for the browser leaving full screen: there P pauses and the
+// Go back dialog answers to arrows, Enter/Space and its buttons only.
+function buildUsesEscape()
+{
+    return BUILD_CONFIG.platform !== 'playgama'
+}
 // The mode a launch starts in
 function buildBootMode()
 {

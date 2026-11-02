@@ -1682,13 +1682,14 @@ const CLIMB_UI = {
         redrawOverlays()
     },
     // Dialog keys: arrows move the focus, Enter (or Space) presses the focused
-    // button, Escape keeps falling; every other key (P included) leaves it open.
+    // button, Escape keeps falling (not on Playgama, see buildUsesEscape); every
+    // other key (P included) leaves it open.
     goBackKey(key) {
         if (this.goBackAdPending) return
         if (['ArrowLeft', 'ArrowUp'].includes(key)) this.goBackFocus = 0
         else if (['ArrowRight', 'ArrowDown'].includes(key)) this.goBackFocus = 1
         else if (key === 'Enter' || key === ' ') return this.goBackFocus ? this.keepFalling() : this.goBack()
-        else if (key === 'Escape') return this.keepFalling()
+        else if (key === 'Escape' && buildUsesEscape()) return this.keepFalling()
         else return
         redrawOverlays()
     },

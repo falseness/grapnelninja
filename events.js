@@ -166,7 +166,8 @@ function createEvents()
     // Keys that would scroll the host page around an embedding iframe
     const scrollKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ',
         'PageUp', 'PageDown', 'Home', 'End']
-    const pauseKeys = ['Escape', 'p', 'P']
+    // Not Escape on Playgama (buildUsesEscape): it neither pauses nor is prevented
+    const pauseKeys = buildUsesEscape() ? ['Escape', 'p', 'P'] : ['p', 'P']
     document.addEventListener('keydown', function(event)
     {
         if (scrollKeys.includes(event.key))
