@@ -45,7 +45,7 @@ FAKE_GAMEPIX = '''(() => {
 FAKE_Y8 = '''(() => {
     const FAKE = window.__fakeSdk = {calls: [], mode: 'viewed'}
     const later = fn => new Promise(r => setTimeout(() => { fn(); r() }, 10))
-    const SDK = {showAd(o) {
+    const SDK = {init() { FAKE.inits = (FAKE.inits || 0) + 1; return Promise.resolve() }, showAd(o) {
         const call = {mode: FAKE.mode, type: o.type, name: o.name, callbacks: []}
         FAKE.calls.push(call)
         const fire = (name, ...args) => { call.callbacks.push(name); if (o[name]) o[name](...args) }
