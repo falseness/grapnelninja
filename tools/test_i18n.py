@@ -101,13 +101,13 @@ class I18nTests(unittest.TestCase):
 
     def test_ru_locale_boots_russian(self):
         ui = self.ui(self.open('ru-RU'))
-        self.assertEqual(ui, {'lang': 'ru', 'title': 'Grapnel Ninja', 'htmlLang': 'ru',
+        self.assertEqual(ui, {'lang': 'ru', 'title': 'Grapple Over', 'htmlLang': 'ru',
                               'chill': 'спокойный режим', 'button': 'Русский'})
         log('ru-RU -> ru: pass')
 
     def test_en_locale_boots_english(self):
         ui = self.ui(self.open('en-US'))
-        self.assertEqual(ui, {'lang': 'en', 'title': 'Grapnel Ninja', 'htmlLang': 'en',
+        self.assertEqual(ui, {'lang': 'en', 'title': 'Grapple Over', 'htmlLang': 'en',
                               'chill': 'chill version', 'button': 'English'})
         log('en-US -> en: pass')
 
@@ -160,7 +160,8 @@ class I18nTests(unittest.TestCase):
             if en != ru:
                 placeholders[k] = (en, ru)
         report += f'placeholder mismatches: {placeholders}\n'
-        # Every ru string except the title and the shared labels is translated
+        # Every ru string except the titles (game.title, mode.grapple_over: the Latin
+        # publication title, Playgama 3.5.1) and the shared labels is translated
         same = sorted(k for k in d['en'] if d['en'][k] == d['ru'].get(k))
         report += f'identical en/ru: {same}\n'
         if self.evidence:
@@ -173,7 +174,7 @@ class I18nTests(unittest.TestCase):
             (out / 'ru-strings.md').write_text('\n'.join(rows) + '\n')
         print(report, file=sys.stderr)
         self.assertEqual((missing_ru, missing_en, empty, placeholders), ([], [], [], {}))
-        self.assertEqual(same, ['game.title', 'hud.fps'])
+        self.assertEqual(same, ['game.title', 'hud.fps', 'mode.grapple_over'])
 
     def test_cyrillic_glyphs_render(self):
         page = self.open('ru-RU')
@@ -210,6 +211,151 @@ class I18nTests(unittest.TestCase):
         page.screenshot(path=str(out / 'pause.png'))
         page.evaluate('menu.unPause()')
         log(f'{lang} {viewport["width"]}x{viewport["height"]}: boot/hud/pause saved')
+
+
+# Grapple Over's pause screen is CLIMB_UI.drawMenu (menu.drawPauseScreen); its
+# title is the first CLIMB_UI.text drawn. Other modes draw menu.getPauseTitle.
+# Records every Text drawn while window.__textDraws is an array.
+TITLE_HOOKS = '''() => {
+    if (window.__titleHook) return
+    window.__titleHook = true
+    const draw = Text.prototype.draw
+    Text.prototype.draw = function(...args) {
+        if (window.__textDraws) window.__textDraws.push(this)
+        return draw.apply(this, args)
+    }
+    // Only CLIMB_UI.text calls inside drawMenu (the HUD uses CLIMB_UI.text too)
+    let inMenu = false
+    const drawMenu = CLIMB_UI.drawMenu
+    CLIMB_UI.drawMenu = function(...args) {
+        inMenu = true
+        try { return drawMenu.apply(this, args) } finally { inMenu = false }
+    }
+    const text = CLIMB_UI.text
+    CLIMB_UI.text = function(...args) {
+        if (window.__textDraws && inMenu) window.__pauseTitles.push(args[0])
+        return text.apply(this, args)
+    }
+    const getPauseTitle = menu.getPauseTitle
+    menu.getPauseTitle = function(...args) {
+        const title = getPauseTitle.apply(this, args)
+        if (window.__textDraws) window.__pauseTitles.push(title.text)
+        return title
+    }
+}'''
+
+# The pause panel title as drawn: the first title string handed to the draw that
+# also reached Text.prototype.draw
+PAUSE_TITLE = '''() => {
+    if (!menu.gamePaused) menu.startPause()
+    window.__textDraws = []
+    window.__pauseTitles = []
+    redrawOverlays()
+    const drawn = window.__textDraws.map(t => t.text), titles = window.__pauseTitles
+    window.__textDraws = null
+    const title = titles.length && drawn.includes(titles[0]) ? titles[0] : null
+    return {paused: menu.gamePaused, version, pauseTitle: title}
+}'''
+
+
+class BuiltZipTitleTests(unittest.TestCase):
+    """TASK-871: every Grapple Over release zip shows the title 'Grapple Over'.
+
+    Zips come from I18N_ZIP_DIR (DIR/<portal>/grapple-over-<portal>.zip, as
+    tools/build_release.py writes them) or are built from HEAD into a temp dir
+    (needs the Y8/GA build env, else skipped). Each zip boots offline in en-US
+    and ru-RU (the Playgama SDK is game_harness.LOCAL_BRIDGE; other portal SDKs
+    are aborted) and must show 'Grapple Over' as document.title, #loading-title
+    and the pause panel title (Grapple Over's pause screen draws
+    'mode.grapple_over', the other modes' panel 'game.title'). I18N_ZIP_EVIDENCE=FILE writes the rows as
+    compact JSON.
+    """
+    PORTALS = ('itch', 'gamepix', 'y8', 'playgama')
+    LANGUAGES = (('en-US', 'en'), ('ru-RU', 'ru'))
+    TITLE = 'Grapple Over'
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil
+        import tempfile
+        import build_release
+        from test_build_release import y8_env
+        cls.build_release = build_release
+        zip_dir = os.environ.get('I18N_ZIP_DIR')
+        if zip_dir:
+            cls.out = Path(zip_dir)
+        else:
+            env = y8_env()
+            if not all(env.values()):
+                raise unittest.SkipTest('Y8_APP_ID / Y8_GAME_ID / GA_GAME_KEY / GA_SECRET_KEY unavailable')
+            cls.out = Path(tempfile.mkdtemp(prefix='i18n-zips-'))
+            cls.addClassCleanup(shutil.rmtree, cls.out, True)
+            tree = build_release.CommittedTree('HEAD')
+            for portal in cls.PORTALS:
+                build_release.build(portal, cls.out, env=env, tree=tree)
+
+    def boot(self, site, locale, portal):
+        from contextlib import ExitStack
+        from browser_test_support import start_browser_test, wait_for_boot_run
+        from game_harness import LOCAL_BRIDGE, SDK_URL, collect_errors
+        with ExitStack() as stack:
+            url, browser = start_browser_test(site, stack.callback)
+            context = browser.new_context(viewport=VIEWPORT, locale=locale)
+            stack.callback(context.close)
+            context.route(url + self.build_release.GA_SDK, lambda r: r.fulfill(
+                content_type='application/javascript', body='// GameAnalytics stub\n'))
+            if portal == 'playgama':
+                context.route(SDK_URL, lambda r: r.fulfill(
+                    content_type='application/javascript', body=LOCAL_BRIDGE))
+            page = context.new_page()
+            errors = collect_errors(page)
+            page.goto(url + 'index.html')
+            wait_for_boot_run(page)
+            page.evaluate(TITLE_HOOKS)
+            state = page.evaluate('''() => ({lang: I18N.language, documentTitle: document.title,
+                loadingTitle: document.getElementById('loading-title').textContent,
+                platform: BUILD_CONFIG.platform, build: BUILD_CONFIG.build})''')
+            state.update(page.evaluate(PAUSE_TITLE))
+            state['pageErrors'] = errors['page']
+            return state
+
+    def test_built_zips_show_grapple_over(self):
+        import hashlib
+        import shutil
+        import tempfile
+        import zipfile
+        rows = []
+        for portal in self.PORTALS:
+            path = self.out / portal / f'grapple-over-{portal}.zip'
+            data = path.read_bytes()
+            with zipfile.ZipFile(path) as z:
+                i18n_count = z.read('i18n.js').decode('utf-8').count('Grapnel Ninja')
+            site = Path(tempfile.mkdtemp(prefix=f'i18n-{portal}-'))
+            self.addCleanup(shutil.rmtree, site, True)
+            with zipfile.ZipFile(path) as z:
+                z.extractall(site)
+            for locale, lang in self.LANGUAGES:
+                with self.subTest(portal=portal, locale=locale):
+                    s = self.boot(site, locale, portal)
+                    row = {'portal': portal, 'language': lang, 'documentTitle': s['documentTitle'],
+                           'loadingTitle': s['loadingTitle'],
+                           'pauseTitle': s['pauseTitle'], 'version': s['version'],
+                           'bootLanguage': s['lang'], 'platform': s['platform'], 'build': s['build'],
+                           'zipSha256': hashlib.sha256(data).hexdigest(), 'i18nGrapnelNinja': i18n_count}
+                    row['pass'] = (s['lang'] == lang and s['platform'] == portal and s['paused']
+                                   and i18n_count == 0 and s['pageErrors'] == []
+                                   and row['documentTitle'] == row['loadingTitle'] == row['pauseTitle'] == self.TITLE)
+                    rows.append(row)
+                    log(f'{portal} {lang}: ' + json.dumps(row, ensure_ascii=False, separators=(',', ':')))
+                    self.assertEqual(s['pageErrors'], [])
+                    self.assertEqual((s['lang'], s['platform'], s['paused']), (lang, portal, True))
+                    self.assertEqual(i18n_count, 0)
+                    self.assertEqual((row['documentTitle'], row['loadingTitle'], row['pauseTitle']),
+                                     (self.TITLE,) * 3)
+        evidence = os.environ.get('I18N_ZIP_EVIDENCE')
+        if evidence:
+            Path(evidence).write_text(json.dumps(rows, ensure_ascii=False, separators=(',', ':')) + '\n')
+        self.assertEqual(len(rows), 8)
 
 
 if __name__ == '__main__':
