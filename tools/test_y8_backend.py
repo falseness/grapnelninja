@@ -8,6 +8,10 @@ answered with a fake SDK that records every call in order
 (window.__fakeY8.calls), with no SDK, with throwing SDKs, or (test_09) with
 the real SDK script. Every other request is blocked and recorded (test_09:
 the real SDK's own requests to y8.com hosts are aborted and listed apart).
+The vendored GameAnalytics SDK (analytics/vendor/GameAnalytics.min.js) is
+served as an empty script, so the GameAnalytics backend stays a no-op and
+nothing reaches api.gameanalytics.com (tools/smoke_gameanalytics.py --zip
+covers the real GameAnalytics traffic of this zip).
 
 Y8_APP_ID / Y8_GAME_ID come from the environment or the credentials file
 (as tools/test_build_release.py); their values are compared, never printed
@@ -15,7 +19,7 @@ or written (assertion messages and evidence carry match flags only).
 
 - 00: the zip is current (every shipped file except the rewritten
   index.html/buildconfig.js equals the working tree); the async SDK tag sits
-  right before the y8.js tag; analytics stays none.js; y8.js is
+  right before the y8.js tag; analytics is the GameAnalytics backend; y8.js is
   self-contained; buildconfig.js carries the env ids.
 - 01: init: sdk.init called once, after the SDK script ran (also when the
   SDK script arrives late), with ({appId, autoLogin: false}, {gameId}) equal
@@ -77,7 +81,8 @@ SDK_TAG = '<script src="%s" async></script>' % SDK_URL
 BACKEND_TAG = '<script src = "platform/backends/y8.js"></script>'
 GAME_BASE = 'https://y8-local.test/grapple-over/'
 GAME_URL = GAME_BASE + 'index.html'
-REWRITTEN = {'index.html', 'buildconfig.js'}
+REWRITTEN = {'index.html', 'buildconfig.js', 'analytics/backends/gameanalytics.js'}
+GA_SDK = 'analytics/vendor/GameAnalytics.min.js'
 Y8_HOSTS = re.compile(r'^https://([a-z0-9-]+\.)*y8\.com/')
 ID_LINE = re.compile(r'App ID: (\S+)\s+Game ID: (\S+)')
 
@@ -236,6 +241,8 @@ class Y8BackendTests(unittest.TestCase):
             return route.fulfill(body=SDKS[self.sdk], content_type='application/javascript')
         if url.startswith(GAME_BASE):
             name = url[len(GAME_BASE):].split('?')[0].split('#')[0] or 'index.html'
+            if name == GA_SDK:
+                return route.fulfill(content_type='application/javascript', body='// GameAnalytics stub\n')
             if name in self.files:
                 return route.fulfill(body=self.files[name],
                                      content_type=CONTENT_TYPES.get(Path(name).suffix, 'application/octet-stream'))
@@ -345,8 +352,10 @@ class Y8BackendTests(unittest.TestCase):
         sdk_at, backend_at = html.index(SDK_TAG), html.index(BACKEND_TAG)
         self.assertLess(sdk_at, backend_at)
         self.assertEqual(html[sdk_at + len(SDK_TAG):backend_at].strip(), '')
-        self.assertIn('analytics/backends/none.js', html)
-        self.assertNotIn('gameanalytics', html.lower())
+        # Y8 ships the GameAnalytics backend (keys injected; the SDK is stubbed in these tests)
+        self.assertIn('<script src = "analytics/vendor/GameAnalytics.min.js"></script>', html)
+        self.assertIn('<script src = "analytics/backends/gameanalytics.js"></script>', html)
+        self.assertNotIn('analytics/backends/none.js', html)
         config = self.files['buildconfig.js'].decode()
         self.assertIn("platform: 'y8'", config)
         self.assertIn("modes: ['grapple_over']", config)
