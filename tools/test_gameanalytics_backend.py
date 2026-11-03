@@ -15,6 +15,9 @@ record their arguments):
 - a GameAnalytics whose every method throws, or no SDK at all (404), never
   reaches the game: no page error, the run goes on, facade calls return.
 - the repo's gameanalytics.js (empty GA_KEYS) never calls GameAnalytics.
+- an SDK that answers its init late (the real one does, one round trip after
+  initialize): boot events (env:*, the run's progression Start) wait and go out
+  in order after the answer; startSession is not replayed.
 - static: the itch zip loads the SDK + gameanalytics.js instead of none.js
   and ships the SDK unmodified with its licence; the y8 zip ships the same
   SDK and keys; the dev index.html and the gamepix / playgama zips stay on
@@ -48,7 +51,9 @@ SDK_PATH = build_release.GA_SDK
 VIEWPORT = {'width': 1280, 'height': 720}
 
 # Recording stand-in for the vendored SDK (same globals and enum values as
-# GameAnalytics.min.js 5.0.0). window.__GA_MOCK = 'throw' makes every method throw.
+# GameAnalytics.min.js 5.0.0). window.__GA_MOCK_MODE = 'throw' makes every method throw;
+# 'deferred' adds the SDK's readiness API (isRemoteConfigsReady / addRemoteConfigsListener,
+# not recorded): not ready until window.__gaAnswer() plays the init answer.
 MOCK_SDK = r'''
 (function(scope) {
     const calls = []
@@ -63,6 +68,13 @@ MOCK_SDK = r'''
             if (mode === 'throw')
                 throw new Error('GA mock ' + name + ' throws')
         }
+    if (mode === 'deferred') {
+        let answered = false
+        const listeners = []
+        GameAnalytics.isRemoteConfigsReady = () => answered
+        GameAnalytics.addRemoteConfigsListener = l => listeners.push(l)
+        scope.__gaAnswer = () => { answered = true; for (const l of listeners) l.onRemoteConfigsUpdated() }
+    }
     scope.gameanalytics = {
         GameAnalytics,
         EGAErrorSeverity: {Undefined: 0, Debug: 1, Info: 2, Warning: 3, Error: 4, Critical: 5},
@@ -280,6 +292,30 @@ class GameAnalyticsBackendTest(unittest.TestCase):
         self.assertEqual(self.calls(page), [])
         self.assert_running(page, errors)
         self.evidence['cases']['repo_backend_empty_keys'] = {'ga_calls': 0, 'pass': True}
+
+    def test_07_boot_events_wait_for_the_init_answer(self):
+        page, errors = self.boot(mode='deferred')
+        before = self.calls(page)
+        self.assertEqual([c[0] for c in before], ['configureBuild', 'initialize'],
+                         'events reached GameAnalytics before its init answered')
+        sent = page.evaluate('() => ANALYTICS.debugLog.filter(e => e.fn === "addDesignEvent" && '
+                             'String(e.args[0]).startsWith("env:")).map(e => e.args[0])')
+        self.assertTrue(sent, 'the game sent no env:* events at boot')
+        page.evaluate('() => window.__gaAnswer()')
+        page.wait_for_timeout(300)
+        after = self.calls(page)[len(before):]
+        names = [c[0] for c in after]
+        env = [c[1][0] for c in after if c[0] == 'addDesignEvent' and str(c[1][0]).startswith('env:')]
+        self.assertEqual(env, sent, 'queued env:* events were not delivered in order')
+        self.assertIn('addProgressionEvent', names)
+        self.assertNotIn('startSession', names)
+        # later events go straight through
+        n = len(self.calls(page))
+        page.evaluate("() => ANALYTICS.design('goback:SEC-chain1')")
+        self.assertEqual(self.calls(page)[n:], [['addDesignEvent', ['goback:SEC-chain1']]])
+        self.assert_running(page, errors)
+        self.evidence['cases']['deferred_init'] = {'before_answer': before, 'delivered_after': names,
+                                                   'env_events': env, 'pass': True}
 
 
 if __name__ == '__main__':

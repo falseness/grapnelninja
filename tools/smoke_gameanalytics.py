@@ -7,11 +7,12 @@ aborted), lets the game boot and play a few seconds, and records every
 GameAnalytics request/response: method, URL with the game key replaced by
 <GA_GAME_KEY> (the secret key never appears in URLs; it is redacted too in
 case), HTTP status and, for /events posts, the event categories in the body
-(no other body content). Passes when the init request (SDK 5.0.0:
+and the design event ids (no other body content). Passes when the init request (SDK 5.0.0:
 POST remote_configs/v1/init, answered 2xx; GameAnalytics answers it 201
 Created) succeeded, an /events post carrying the session-start 'user'
-event answered 200, and the game booted on the gameanalytics backend
-without page errors.
+event answered 200, an /events post answered 200 carried the boot
+env:* design events (sent before the init answer: they must not be dropped),
+and the game booted on the gameanalytics backend without page errors.
 Sends one real smoke session to the GameAnalytics game.
 
 GA_GAME_KEY / GA_SECRET_KEY are read from the environment or
@@ -62,6 +63,11 @@ def session_ok(rows):
                                  and 'user' in (r.get('categories') or []) for r in rows)
 
 
+def env_ok(rows):
+    return any(r['url'].endswith('/events') and r['status'] == 200
+               and any(str(c).startswith('design:env:') for c in r.get('categories') or []) for r in rows)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--zip', type=Path, default=DEFAULT_ZIP)
@@ -107,7 +113,9 @@ def main(argv=None):
                     body = gzip.decompress(body)
                 events = json.loads(body) if body else None
                 if isinstance(events, list):
-                    return [e.get('category') for e in events if isinstance(e, dict)]
+                    return [e.get('category') + (':' + e['event_id'] if e.get('category') == 'design'
+                                                 and isinstance(e.get('event_id'), str) else '')
+                            for e in events if isinstance(e, dict) and isinstance(e.get('category'), str)]
             except Exception as e:  # noqa: BLE001 - evidence only
                 return [f'<unreadable: {type(e).__name__}>']
             return None
@@ -138,7 +146,7 @@ def main(argv=None):
         while time.time() < deadline:
             page.mouse.click(box['x'] + box['width'] * 0.7, box['y'] + box['height'] * 0.3)
             page.wait_for_timeout(1000)
-            if session_ok(rows):
+            if session_ok(rows) and env_ok(rows):
                 break
         page.evaluate('() => ANALYTICS.sessionEnd()')
         page.wait_for_timeout(2000)
@@ -158,7 +166,8 @@ def main(argv=None):
     }
     report['init_ok_2xx'] = init_ok(rows)
     report['session_start_events_200'] = session_ok(rows)
-    report['pass'] = (report['session_start_events_200'] and not page_errors
+    report['env_events_200'] = env_ok(rows)
+    report['pass'] = (report['session_start_events_200'] and report['env_events_200'] and not page_errors
                       and state['backend'] == 'gameanalytics' and state['runInProgress'])
     text = redact(json.dumps(report, indent=1))
     args.out.parent.mkdir(parents=True, exist_ok=True)

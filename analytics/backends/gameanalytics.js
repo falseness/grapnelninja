@@ -1,4 +1,4 @@
-// GameAnalytics analytics backend (itch.io builds only: GamePix and Playgama
+// GameAnalytics analytics backend (itch.io and Y8 builds: GamePix and Playgama
 // forbid third-party analytics, see docs/platform-sdk.md). Same inner
 // methods as none.js; analytics.js (the ANALYTICS facade) has already
 // sanitized every argument. Needs the vendored SDK
@@ -8,6 +8,13 @@
 // rewrites that one line with GA_GAME_KEY / GA_SECRET_KEY from the
 // environment; without both keys (or without the SDK) every method is a
 // no-op. Nothing here ever throws into the game.
+//
+// GameAnalytics drops events ("SDK is disabled") until its init request has
+// answered, which takes a network round trip after initialize(). Events sent
+// before that (the env:* events and the run's progression Start at boot) wait
+// in a bounded queue and go out in order once the SDK reports it is ready
+// (addRemoteConfigsListener / isRemoteConfigsReady). An SDK without those
+// calls is treated as ready at once.
 // Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
 var GA_KEYS = {gameKey: '', secretKey: ''}
 
@@ -20,8 +27,13 @@ var ANALYTICS_BACKEND = (function()
     const AD_TYPE = {video: 'Video', rewarded: 'RewardedVideo', rewarded_video: 'RewardedVideo',
         playable: 'Playable', interstitial: 'Interstitial', offerwall: 'OfferWall', banner: 'Banner'}
     const warned = new Set()
+    // Events held until GameAnalytics answered its init (oldest kept)
+    const PENDING_MAX = 200
+    const POLL_MS = 250, POLL_FOR_MS = 60000
+    const pending = []
     let initialized = false
     let ready = false
+    let live = false
 
     function own(table, key)
     {
@@ -49,11 +61,8 @@ var ANALYTICS_BACKEND = (function()
         return table && own(table, key) ? table[key] : undefined
     }
 
-    // Calls gameanalytics.GameAnalytics.<fn>(...args) once initialize() ran
-    function call(fn, args)
+    function deliver(fn, args)
     {
-        if (!ready)
-            return
         try
         {
             sdk().GameAnalytics[fn](...args)
@@ -62,6 +71,49 @@ var ANALYTICS_BACKEND = (function()
         {
             warn(fn, e)
         }
+    }
+
+    // Calls gameanalytics.GameAnalytics.<fn>(...args) once initialize() ran;
+    // until the SDK is ready (live) the call waits in `pending`
+    function call(fn, args)
+    {
+        if (!ready)
+            return
+        if (live)
+            return deliver(fn, args)
+        if (pending.length < PENDING_MAX)
+            pending.push([fn, args])
+    }
+
+    function goLive()
+    {
+        if (live)
+            return
+        live = true
+        for (const [fn, args] of pending.splice(0))
+            deliver(fn, args)
+    }
+
+    // The SDK calls its remote-configs listeners while it handles the init
+    // answer, just before it starts the session: flush on the next tick.
+    // Polling covers a listener that is never called.
+    function waitUntilReady()
+    {
+        const ga = sdk().GameAnalytics
+        if (typeof ga.isRemoteConfigsReady !== 'function')
+            return goLive()
+        if (typeof ga.addRemoteConfigsListener === 'function')
+            deliver('addRemoteConfigsListener', [{onRemoteConfigsUpdated: () => setTimeout(goLive, 0)}])
+        const started = Date.now()
+        const timer = setInterval(() =>
+        {
+            let isReady = false
+            try { isReady = !!ga.isRemoteConfigsReady() } catch (e) {}
+            if (isReady)
+                setTimeout(goLive, 0)
+            if (isReady || live || Date.now() - started > POLL_FOR_MS)
+                clearInterval(timer)
+        }, POLL_MS)
     }
 
     return {
@@ -85,19 +137,23 @@ var ANALYTICS_BACKEND = (function()
             const build = (release && cfg.platform ? cfg.platform + '-' + release : release).slice(0, 32)
             ready = true
             if (build)
-                call('configureBuild', [build])
-            call('initialize', [keys.gameKey, keys.secretKey])
+                deliver('configureBuild', [build])
+            deliver('initialize', [keys.gameKey, keys.secretKey])
+            waitUntilReady()
         },
 
-        // GA ignores it until its init answered (it then has a session already)
+        // GA starts the session itself when its init answers, so a start or
+        // end before that is dropped rather than queued
         startSession()
         {
-            call('startSession', [])
+            if (live)
+                call('startSession', [])
         },
 
         endSession()
         {
-            call('endSession', [])
+            if (live)
+                call('endSession', [])
         },
 
         // status: 'Start' | 'Complete' | 'Fail' (EGAProgressionStatus)
