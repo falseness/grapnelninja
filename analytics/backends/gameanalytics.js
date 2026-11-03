@@ -79,8 +79,10 @@ var ANALYTICS_BACKEND = (function()
             const keys = typeof GA_KEYS === 'object' && GA_KEYS || {}
             if (!keys.gameKey || !keys.secretKey || !sdk())
                 return
-            const release = typeof BUILD_CONFIG === 'object' && BUILD_CONFIG && BUILD_CONFIG.build
-            const build = String(release || config && config.build || '').slice(0, 32)
+            const cfg = typeof BUILD_CONFIG === 'object' && BUILD_CONFIG || {}
+            const release = String(cfg.build || config && config.build || '')
+            // '<portal>-<build id>' so the itch.io and Y8 builds stay apart in GameAnalytics
+            const build = (release && cfg.platform ? cfg.platform + '-' + release : release).slice(0, 32)
             ready = true
             if (build)
                 call('configureBuild', [build])

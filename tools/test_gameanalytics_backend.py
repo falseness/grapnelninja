@@ -7,7 +7,7 @@ serves it over http with every external request aborted and replaces the
 vendored SDK (analytics/vendor/GameAnalytics.min.js) with a recording mock
 `gameanalytics` (the real EGA* enum values, GameAnalytics.* methods that
 record their arguments):
-- boot: configureBuild(the release build id, BUILD_CONFIG.build) then initialize(game key, secret key) once
+- boot: configureBuild('itch-' + the release build id, BUILD_CONFIG.platform/build) then initialize(game key, secret key) once
   with the injected keys, then startSession; the game runs.
 - every ANALYTICS facade call maps to its GameAnalytics call with the
   sanitized arguments and the EGA* enum values; unknown ad actions/types
@@ -16,8 +16,9 @@ record their arguments):
   reaches the game: no page error, the run goes on, facade calls return.
 - the repo's gameanalytics.js (empty GA_KEYS) never calls GameAnalytics.
 - static: the itch zip loads the SDK + gameanalytics.js instead of none.js
-  and ships the SDK unmodified with its licence; the dev index.html and the
-  gamepix / y8 / playgama zips stay on none.js without the SDK.
+  and ships the SDK unmodified with its licence; the y8 zip ships the same
+  SDK and keys; the dev index.html and the gamepix / playgama zips stay on
+  none.js without the SDK.
 
 GA_BACKEND_EVIDENCE_DIR=DIR writes ga-backend.json (calls with the key
 values replaced by '<GA_GAME_KEY>' / '<GA_SECRET_KEY>').
@@ -204,7 +205,14 @@ class GameAnalyticsBackendTest(unittest.TestCase):
         dev = (ROOT / 'index.html').read_text()
         self.assertIn('<script src = "analytics/backends/none.js"></script>', dev)
         self.assertNotIn('gameanalytics', dev.lower())
-        for portal in ('gamepix', 'y8', 'playgama'):
+        y8 = self.zips['y8']
+        y8_srcs = re.findall(r'<script src\s*=\s*"([^"]+)"', y8['index.html'].decode('utf-8'))
+        j = y8_srcs.index(SDK_PATH)
+        self.assertEqual(y8_srcs[j:j + 3], [SDK_PATH, build_release.GA_BACKEND, 'analytics.js'])
+        self.assertEqual(y8[SDK_PATH], itch[SDK_PATH])
+        self.assertTrue(y8[build_release.GA_BACKEND] == itch[build_release.GA_BACKEND],
+                        'y8 gameanalytics.js differs from the itch one')
+        for portal in ('gamepix', 'playgama'):
             with self.subTest(portal=portal):
                 files = self.zips[portal]
                 self.assertIn('analytics/backends/none.js', files)
@@ -219,7 +227,7 @@ class GameAnalyticsBackendTest(unittest.TestCase):
         self.assertEqual(names[:3], ['configureBuild', 'initialize', 'startSession'])
         self.assertEqual(names.count('initialize'), 1)
         self.assertEqual(names.count('configureBuild'), 1)
-        self.assertEqual(calls[0][1], [self.tree.build_id()])
+        self.assertEqual(calls[0][1], ['itch-' + self.tree.build_id()])
         self.assertTrue(calls[1][1] == [self.env['GA_GAME_KEY'], self.env['GA_SECRET_KEY']],
                         'initialize was not called with GA_GAME_KEY / GA_SECRET_KEY')
         # the spawn section's progression Start follows the session

@@ -48,9 +48,9 @@ It ships index.html at the zip root plus every file index.html references and
 every committed file a shipped script names in a string literal
 (`leveldata.js`, `art/win-*.svg`); adds the SDK tag and backend tag above
 after `local.js` (kept: the stubs build on `LOCAL_PLATFORM_BACKEND`); keeps
-`analytics/backends/none.js` except for itch.io, where it swaps that tag for
-the vendored GameAnalytics SDK plus `analytics/backends/gameanalytics.js`
-with the keys injected (see "GameAnalytics backend (itch.io)" below);
+`analytics/backends/none.js` except for itch.io and Y8, where it swaps that
+tag for the vendored GameAnalytics SDK plus `analytics/backends/gameanalytics.js`
+with the keys injected (see "GameAnalytics backend (itch.io, Y8)" below);
 rewrites `buildconfig.js` (modes
 `['grapple_over']` for itch.io, GamePix and Y8, every mode for Playgama;
 `Y8_APP_ID` / `Y8_GAME_ID` from the environment for Y8; `build` =
@@ -144,7 +144,7 @@ itch.io), tools/test_gamepix_backend.py, tools/test_y8_backend.py, tools/test_pl
 - **No GameAnalytics (or any external analytics) on Playgama** — only
   `bridge.analytics.send`.
 - GameAnalytics is allowed on itch.io, Y8 and local builds; it ships on
-  **itch.io only** (user decision), through the analytics backend
+  **itch.io and Y8** (user decisions), through the analytics backend
   `analytics/backends/gameanalytics.js` (below), never in a platform backend.
   Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
 
@@ -170,9 +170,10 @@ dropped; error messages <= 8000 chars), records it in `ANALYTICS.debugLog`
 - **GamePix and Playgama: the analytics backend must stay `none`.** Their
   rules forbid third-party analytics (Playgama telemetry goes through
   `bridge.analytics.send` in the platform backend's `track` instead).
-- **itch.io ships the GameAnalytics backend** (Y8 would be allowed but
-  stays on `none`): see "GameAnalytics backend (itch.io)" below. The dev
-  index.html and every other build stay on `none.js`.
+- **itch.io and Y8 ship the GameAnalytics backend** (same game key; the
+  build is reported as `itch-<build id>` / `y8-<build id>`, so the two stay
+  apart in GameAnalytics): see "GameAnalytics backend (itch.io, Y8)" below.
+  The dev index.html and the GamePix / Playgama builds stay on `none.js`.
 - Call sites: boot sends `init({build: PLATFORM.buildVersion})` +
   `sessionStart()` once after `PLATFORM.init()`; `pagehide` sends one
   `sessionEnd()` per page; window `error` / `unhandledrejection` send
@@ -316,14 +317,14 @@ Fail, run Fail, `sessionEnd()`. Cost: one comparison per physics cycle
 (`CLIMB_UI.trackSection`). Tested by `tools/test_telemetry_gameplay.py`
 (scripted runs, exact expected sequences).
 
-## GameAnalytics backend (itch.io)
+## GameAnalytics backend (itch.io, Y8)
 
 `analytics/backends/gameanalytics.js` (TASK-860) is `none.js` with each
 inner method filled from its `// REPLACE:` marker. It talks to the vendored
 SDK `analytics/vendor/GameAnalytics.min.js`: GameAnalytics JavaScript SDK
 **5.0.0** (npm `gameanalytics` 5.0.0 = GitHub release v5.0.0), unmodified,
 **MIT** licence in `analytics/vendor/GameAnalytics.LICENSE.txt` (shipped in
-the itch zip next to the SDK); source URL and sha256 in
+the itch and Y8 zips next to the SDK); source URL and sha256 in
 `analytics/vendor/GameAnalytics.VERSION.txt`. No CDN is loaded.
 
 | Inner method | GameAnalytics call |

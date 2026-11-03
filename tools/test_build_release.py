@@ -168,7 +168,7 @@ class BuildReleaseTest(unittest.TestCase):
                     referenced = (name == 'index.html' or name in refs or name in literals
                                   or any(name.startswith(p) for p in prefixes)
                                   # the MIT licence of the vendored GameAnalytics SDK
-                                  or (portal == 'itch' and name == build_release.GA_LICENSE))
+                                  or (portal in build_release.GA_PORTALS and name == build_release.GA_LICENSE))
                     self.assertTrue(referenced, f'{portal}: {name} is not referenced')
                     self.assertFalse(set(name.split('/')) & FORBIDDEN_PARTS, f'{portal}: {name}')
                     self.assertFalse(name.endswith(('.py', '.md')), f'{portal}: {name}')
@@ -209,7 +209,7 @@ class BuildReleaseTest(unittest.TestCase):
                 analytics = build_release.ANALYTICS_BACKENDS[portal]
                 self.assertIn(analytics, srcs)
                 self.assertEqual([s for s in srcs if s.startswith('analytics/')],
-                                 [build_release.GA_SDK, analytics] if portal == 'itch' else [analytics])
+                                 [build_release.GA_SDK, analytics] if portal in build_release.GA_PORTALS else [analytics])
                 self.assertEqual(srcs[srcs.index(analytics) + 1], 'analytics.js')
                 self.assertIn(f'platform/backends/{portal}.js', self.zips[portal])
                 for other in PORTALS:
@@ -279,8 +279,8 @@ class BuildReleaseTest(unittest.TestCase):
             for i, secret in enumerate(secrets):
                 with self.subTest(portal=portal, key=('GA_GAME_KEY', 'GA_SECRET_KEY')[i]):
                     self.assertFalse(secret in manifest, 'GA key in a manifest')
-                    if portal == 'itch':
-                        self.assertTrue(secret in self.zips['itch'][build_release.GA_BACKEND], 'GA key missing')
+                    if portal in build_release.GA_PORTALS:
+                        self.assertTrue(secret in self.zips[portal][build_release.GA_BACKEND], 'GA key missing')
                         self.assertEqual(joined.count(secret), 1, 'GA key outside gameanalytics.js')
                     else:
                         self.assertFalse(secret in joined, f'GA key found in the {portal} zip')
@@ -298,7 +298,7 @@ class BuildReleaseTest(unittest.TestCase):
                 self.assertEqual(m['zip_sha256'], hashlib.sha256(zip_bytes).hexdigest())
                 self.assertEqual(m['modes'], EXPECTED_MODES[portal])
                 self.assertEqual(m['analytics_backend'], build_release.ANALYTICS_BACKENDS[portal])
-                self.assertEqual(m['analytics_keys_injected'], portal == 'itch')
+                self.assertEqual(m['analytics_keys_injected'], portal in build_release.GA_PORTALS)
                 self.assertEqual(sorted(f['path'] for f in m['files']), sorted(self.zips[portal]))
                 for f in m['files']:
                     data = self.zips[portal][f['path']]

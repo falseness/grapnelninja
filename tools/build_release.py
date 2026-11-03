@@ -23,12 +23,12 @@ branch scripts):
   local.js stays as the shared base library: every portal stub builds on
   LOCAL_PLATFORM_BACKEND and then redefines PLATFORM_BACKEND, so the portal
   file is the build's platform backend.
-- analytics: itch swaps the analytics/backends/none.js tag for the vendored
-  GameAnalytics SDK (analytics/vendor/GameAnalytics.min.js, its licence file
-  ships next to it) plus analytics/backends/gameanalytics.js, whose
-  'var GA_KEYS = ...' line gets GA_GAME_KEY / GA_SECRET_KEY from the
-  environment (itch only; required there). Every other portal keeps none.js
-  (GamePix and Playgama forbid third-party analytics).
+- analytics: itch and y8 (GA_PORTALS) swap the analytics/backends/none.js
+  tag for the vendored GameAnalytics SDK (analytics/vendor/GameAnalytics.min.js,
+  its licence file ships next to it) plus analytics/backends/gameanalytics.js,
+  whose 'var GA_KEYS = ...' line gets GA_GAME_KEY / GA_SECRET_KEY from the
+  environment (required there). GamePix and Playgama keep none.js (both
+  forbid third-party analytics).
 - buildconfig.js is rewritten: platform, modes (['grapple_over'] for itch,
   gamepix and y8; every mode for playgama), y8 ids (Y8_APP_ID / Y8_GAME_ID
   from the environment, y8 only; required there) and build (the build id,
@@ -36,7 +36,7 @@ branch scripts):
 - manifest.json: portal, build id, revision, modes, zip size and sha256,
   and the per-file list (path, size, sha256). Credential values never go in
   the manifest or the build output, only into the y8 zip's buildconfig.js
-  and the itch zip's analytics/backends/gameanalytics.js.
+  and the itch and y8 zips' analytics/backends/gameanalytics.js.
 """
 import argparse
 import hashlib
@@ -73,7 +73,9 @@ GA_SDK = 'analytics/vendor/GameAnalytics.min.js'
 GA_LICENSE = 'analytics/vendor/GameAnalytics.LICENSE.txt'
 GA_BACKEND = 'analytics/backends/gameanalytics.js'
 ANALYTICS_BACKENDS = {'itch': GA_BACKEND, 'gamepix': 'analytics/backends/none.js',
-                      'y8': 'analytics/backends/none.js', 'playgama': 'analytics/backends/none.js'}
+                      'y8': GA_BACKEND, 'playgama': 'analytics/backends/none.js'}
+# The portals whose zip ships GameAnalytics (with the keys injected)
+GA_PORTALS = tuple(p for p, backend in ANALYTICS_BACKENDS.items() if backend == GA_BACKEND)
 GA_KEYS_LINE = re.compile(r'^var GA_KEYS = .*$', re.M)
 GA_KEY_FORMAT = {'GA_GAME_KEY': re.compile(r'^[A-Za-z0-9]{32}$'),
                  'GA_SECRET_KEY': re.compile(r'^[A-Za-z0-9]{40}$')}
