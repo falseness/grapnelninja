@@ -444,6 +444,28 @@ class BuildReleaseTest(unittest.TestCase):
                 self.assertEqual(self.manifests[portal]['bundle']['parts'], parts)
                 print(f'PASS {portal}: one game bundle {name} ({len(parts)} parts, {len(files[name])} bytes), script tags {srcs}')
 
+    def test_11_single_mode_drops_other_mode_scripts(self):
+        """TASK-894: itch/gamepix/y8 bundles leave out OTHER_MODE_SCRIPTS (one stub part instead); playgama keeps them."""
+        self.assertTrue(build_release.drops_other_modes(self.tree, 'itch'))
+        sources = {p: self.tree.read(p).decode('utf-8') for p in build_release.OTHER_MODE_SCRIPTS}
+        names = [n for src in sources.values() for _, n in build_release.STUB_DECLARATION.findall(src)]
+        for portal in build_release.PORTALS:
+            with self.subTest(portal=portal):
+                parts = build_release.bundle_parts(self.zips[portal])
+                if build_release.MODES[portal] == ['grapple_over']:
+                    self.assertFalse([p for p in build_release.OTHER_MODE_SCRIPTS if p in parts])
+                    stub = parts[build_release.OTHER_MODE_STUBS].decode('utf-8')
+                    self.assertEqual(sorted(n for _, n in build_release.STUB_DECLARATION.findall(stub)),
+                                     sorted(names + ['otherModeOnly']))
+                    self.assertIn('class ElementsFactory {}', stub)
+                    self.assertFalse(self.tree.has(build_release.OTHER_MODE_STUBS))
+                    self.assertIn('sprites/floor.js', parts)
+                else:
+                    self.assertFalse([p for p in build_release.OTHER_MODE_SCRIPTS if p not in parts])
+                    self.assertNotIn(build_release.OTHER_MODE_STUBS, parts)
+                print(f'PASS {portal}: modes {build_release.MODES[portal]}, other-mode scripts '
+                      f'{"stubbed (" + str(len(names)) + " names)" if build_release.OTHER_MODE_STUBS in parts else "kept"}')
+
     def test_08_playgama_old_build_checks(self):
         """The checks of the old tools/build_playgama.py (playgama-start-firefox) that still apply."""
         files = self.zips['playgama']

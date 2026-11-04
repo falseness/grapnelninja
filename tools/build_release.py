@@ -42,6 +42,18 @@ branch scripts):
   tree has no bake and computes it at run time. A revision whose
   routearrows.js does not read ROUTE_ARROWS_BAKED (before TASK-891) builds
   without it, as it did then.
+- single-mode drop (TASK-894): the builds whose modes are ['grapple_over']
+  (itch, gamepix, y8; not playgama) leave out OTHER_MODE_SCRIPTS, the
+  scripts only the bad and classic modes need (elements/factory.js,
+  sprites/rect.js, jumpingcube.js, triangle.js, side.js; sprites/floor.js
+  stays: fixedlevel.js's PersistentWorld extends Floor). Their tags go and
+  a generated other-mode-stubs.js (other_mode_stubs) takes the first one's
+  place: every top-level class and function of those files, empty, so the
+  names the shared code still tests (instanceof Rect / Triangle / Side, the
+  resize's new ElementsFactory) stay declared; a stub function or a stub
+  constructor (but ElementsFactory's) throws. Gated on the revision's
+  buildconfig.js naming OTHER_MODE_SCRIPTS, so older revisions build as
+  they did.
 - bundle (TASK-893, bundle_scripts): the game's own scripts ship as ONE file,
   game-<sha256[:12]>.js (one dot: Playgama's path rule), instead of one tag per file: the local <script src>
   files in index.html order (the build's rewrites and the bake included),
@@ -119,8 +131,17 @@ CONFIG_LINE = re.compile(r'^const BUILD_CONFIG = .*$', re.M)
 ROUTE_ARROWS_TAG = '<script src = "render/routearrows.js"></script>'
 BAKED_ROUTE_ARROWS = 'render/routearrows-baked.js'
 BAKED_ROUTE_ARROWS_TAG = f'<script src = "{BAKED_ROUTE_ARROWS}"></script>'
-# Files a build writes that are no committed blob (their bytes come from the bake)
-GENERATED_FILES = (BAKED_ROUTE_ARROWS,)
+# TASK-894: single-mode builds (MODES == ['grapple_over']) leave out the scripts only
+# the bad and classic modes need; one generated stub script keeps their class and
+# function names declared (other_mode_stubs)
+OTHER_MODE_SCRIPTS = ('elements/factory.js', 'sprites/rect.js', 'sprites/jumpingcube.js',
+                      'sprites/triangle.js', 'sprites/side.js')
+OTHER_MODE_STUBS = 'other-mode-stubs.js'
+# Stub classes the single-mode game does construct (index.html's resize builds a new ElementsFactory)
+CONSTRUCTED_STUBS = ('ElementsFactory',)
+STUB_DECLARATION = re.compile(r'^(class|function)\s+([A-Za-z_$][\w$]*)', re.M)
+# Files a build writes that are no committed blob (their bytes come from the bake / the stubs)
+GENERATED_FILES = (BAKED_ROUTE_ARROWS, OTHER_MODE_STUBS)
 BAKE_TOOL = Path(__file__).resolve().parent / 'release_bake.py'
 _BAKES = {}
 # TASK-893 bundle: the game's own scripts ship as one whitespace-minified file
@@ -128,7 +149,7 @@ BUNDLE_NAME = re.compile(r'^game-[0-9a-f]{12}\.js$')
 # Local scripts that stay separate tags (vendored, already minified)
 UNBUNDLED_SCRIPTS = (GA_SDK,)
 # Parts the build rewrites go in verbatim (their BUILD_CONFIG / GA_KEYS / bake lines stay as written)
-VERBATIM_PARTS = ('buildconfig.js', GA_BACKEND, BAKED_ROUTE_ARROWS)
+VERBATIM_PARTS = ('buildconfig.js', GA_BACKEND, BAKED_ROUTE_ARROWS, OTHER_MODE_STUBS)
 BUNDLE_TABLE = 'window.GAME_BUNDLE_FILES = '
 ESBUILD = Path(__file__).resolve().parent / 'vendor' / 'esbuild' / 'esbuild-linux-x64'
 SCRIPT_ELEMENT = re.compile(r'<script\b([^>]*)>(.*?)</script\s*>', re.S | re.I)
@@ -365,20 +386,69 @@ def bakes_route_arrows(tree):
     return tree.has('render/routearrows.js') and b'ROUTE_ARROWS_BAKED' in tree.read('render/routearrows.js')
 
 
+def drops_other_modes(tree, portal):
+    """True for a single-mode portal at a revision from TASK-894 on (its buildconfig.js names OTHER_MODE_SCRIPTS)."""
+    return (MODES[portal] == ['grapple_over'] and tree.has('buildconfig.js')
+            and b'OTHER_MODE_SCRIPTS' in tree.read('buildconfig.js'))
+
+
+def without_other_mode_tags(html):
+    """html with the OTHER_MODE_SCRIPTS tags removed and the stub script's tag at the first one's place."""
+    for i, path in enumerate(OTHER_MODE_SCRIPTS):
+        tag = f'<script src = "{path}"></script>'
+        if html.count(tag) != 1:
+            raise ValueError(f'index.html must load {tag} exactly once')
+        at = html.index(tag)
+        html = remove_span(html, at, at + len(tag),
+                           [f'<script src = "{OTHER_MODE_STUBS}"></script>'] if i == 0 else None)
+    return html
+
+
+def other_mode_stubs(sources):
+    """other-mode-stubs.js for {path: source} of OTHER_MODE_SCRIPTS: each top-level class and function, empty.
+
+    Grapple Over never creates an object of these classes or calls these
+    functions, but its code names them: instanceof tests (render/effects.js,
+    sprites/ninja.js, respawn.js), index.html's resize (new ElementsFactory).
+    A stub class answers instanceof false, as the real class does when none of
+    its objects exists; constructing one (except CONSTRUCTED_STUBS) or calling
+    a stub function throws, so a missed use shows as a page error. Top-level
+    constants and lets are not stubbed: nothing outside these files uses them.
+    """
+    lines = ['// Generated by tools/build_release.py (TASK-894); do not edit.',
+             '// Single-mode build: ' + ', '.join(sources) + ' (bad and classic modes only)',
+             '// are left out. Their names stay declared; using one throws.',
+             "function otherModeOnly(name) {throw new Error(name + ' is not in this single-mode build')}"]
+    for path, source in sources.items():
+        for kind, name in STUB_DECLARATION.findall(source):
+            if kind == 'function':
+                lines.append(f"function {name}() {{otherModeOnly('{name}')}}")
+            elif name in CONSTRUCTED_STUBS:
+                lines.append(f'class {name} {{}}')
+            else:
+                lines.append(f"class {name} {{constructor() {{otherModeOnly('{name}')}}}}")
+    return ('\n'.join(lines) + '\n').encode('utf-8')
+
+
 def runtime_files(tree, portal, y8_ids, ga_keys=('', ''), bundle=True):
     """{path: bytes} of the portal build (bundle=False: the per-script files before bundle_scripts)."""
     html = portal_html(tree.read('index.html').decode('utf-8'), portal)
     baked = bakes_route_arrows(tree)
     if baked:
         html = with_baked_tag(html)
+    stubbed = drops_other_modes(tree, portal)
+    if stubbed:
+        html = without_other_mode_tags(html)
     files = {'index.html': html.encode('utf-8')}
     refs = local_references(html)
     for path in refs:
-        if path != BAKED_ROUTE_ARROWS:
+        if path not in GENERATED_FILES:
             files[path] = tree.read(path)
     if baked:
         files[BAKED_ROUTE_ARROWS] = baked_route_arrows_js(baked_caches(tree)['route_arrows'])
-    scripts = [p for p in refs if p.endswith('.js') and p != BAKED_ROUTE_ARROWS]
+    if stubbed:
+        files[OTHER_MODE_STUBS] = other_mode_stubs({p: tree.read(p).decode('utf-8') for p in OTHER_MODE_SCRIPTS})
+    scripts = [p for p in refs if p.endswith('.js') and p not in GENERATED_FILES]
     for path in script_assets(tree, scripts):
         files[path] = tree.read(path)
     files['buildconfig.js'] = portal_buildconfig(

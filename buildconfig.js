@@ -1,7 +1,9 @@
 // Build configuration. This file is the repo (dev) default: every mode is
 // playable and the local platform backend is used. A release build replaces
 // this one file (e.g. modes: ['grapple_over'] for the itch.io, GamePix and Y8
-// builds, which ship Grapple Over only). The other modes stay in the code.
+// builds, which ship Grapple Over only). Those single-mode release zips also
+// leave out the scripts only the bad and classic modes need (tools/
+// build_release.py OTHER_MODE_SCRIPTS; a generated stub keeps their names).
 //   platform: the platform backend the build is made for
 //   modes:    the game modes the build can enter; boot starts Grapple Over
 //             when it is listed, else modes[0]
