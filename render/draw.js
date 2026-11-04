@@ -282,7 +282,8 @@ function drawFpsCounterLayer(gameState)
 
 // Run start: draws the HUD and the ground strips once into a scratch canvas
 // in the game transform, so their glow sprites (render/glowsprites.js) are
-// built here and the first frames do no shadowBlur work
+// built here and the first frames do no shadowBlur work. HUD glyph sprites
+// (drawGlowGlyphs) are only queued here: draw() builds them under its budget.
 function warmGlowSprites()
 {
     if (!warmGlowSprites.ctx)
@@ -295,6 +296,8 @@ function warmGlowSprites()
     scratch.scale(scale[version], scale[version])
     LAYOUT_PROBE.boxes = null
     ctx = scratch
+    const defer = GLYPH_GLOW_QUEUE.defer
+    GLYPH_GLOW_QUEUE.defer = true
     try
     {
         if (visualEffects.ui.shouldDraw())
@@ -308,6 +311,7 @@ function warmGlowSprites()
     }
     finally
     {
+        GLYPH_GLOW_QUEUE.defer = defer
         ctx = mainCtx
         LAYOUT_PROBE.boxes = boxes
     }
@@ -354,4 +358,6 @@ function draw()
     ctx.scale(1 / scale[version], 1 / scale[version])
     if (version === 'grapple_over' && floors[0].climbStats.completed) CLIMB_UI.drawMenu()
 
+    // Glyph glow sprites the frame asked for, under a time budget (render/glowsprites.js)
+    buildPendingGlyphSprites()
 }

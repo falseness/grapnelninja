@@ -646,6 +646,15 @@
 
             function gameLoop(frameTime)
             {
+                // Live frames draw new HUD glyph glow once it is built (render/glowsprites.js)
+                GLYPH_GLOW_QUEUE.defer = true
+                try { gameLoopFrame(frameTime) }
+                finally { GLYPH_GLOW_QUEUE.defer = false }
+                game = requestAnimationFrame(gameLoop)
+            }
+
+            function gameLoopFrame(frameTime)
+            {
                 fpsCounter.frame(frameTime)
                 const activelyPlaying = bootComplete && !menu.gamePaused &&
                     !continueOffer.visible && !adOpen && !interstitialPending && !hostPaused &&
@@ -674,12 +683,13 @@
                         TUTORIAL_HINT.advance(steps * physicsStepMs)
                         FALL_MESSAGE.advance(steps * physicsStepMs)
                     }
+                    // A step can open a pause screen (the first-death offer): keep it on top.
+                    // The frame frozen under it draws its glyph glow complete.
+                    GLYPH_GLOW_QUEUE.defer = !menu.gamePaused
                     draw()
-                    // A step can open a pause screen (the first-death offer): keep it on top
                     if (menu.gamePaused) menu.drawPauseScreen()
                     if (activelyPlaying) PLATFORM.startup('first_gameplay_frame', version)
                 }
-                game = requestAnimationFrame(gameLoop)
             }
 
             function runFixedPhysics(frameTime)

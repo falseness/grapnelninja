@@ -807,6 +807,10 @@ class Menu
             draw()
             continueOffer.draw()
         }
+        // A live frame may show HUD text still waiting for its glyph glow
+        // (render/glowsprites.js): the frozen frame is drawn complete
+        else if (GLYPH_GLOW_QUEUE.pending.size)
+            draw()
         this.drawPauseScreen()
         // After the panel is drawn: Grapple Over's pause interstitial
         if (source === 'user' && version === 'grapple_over' && !CLIMB_UI.goingBack && !CLIMB_UI.offering)

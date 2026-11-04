@@ -353,9 +353,9 @@ function drawGlowText(text, x, y, shadowColor, blur, stroke)
 // subpixel phase, in a cache of their own so a ticking counter never evicts
 // other glow sprites. Neighbouring glyph glows add up by source-over rather
 // than in one shadow, a near-identical result.
-// A glyph sprite is a cell of a shared atlas page, so a new glyph creates no
-// canvas: it is painted on one scratch canvas of exactly its own size (the
-// raster of a sprite canvas) and copied 1:1 into the page. A full page starts
+// A glyph sprite is a cell of a shared atlas page: it is painted on a
+// scratch canvas of exactly its own size (the raster of a sprite canvas),
+// copied 1:1 into the page and dropped. A full page starts
 // the next one; past maxPages the oldest page and its cells are dropped.
 const GLYPH_SPRITES =
 {
@@ -368,8 +368,7 @@ const GLYPH_SPRITES =
     maxPages: 4,
     // Transparent px around every cell
     gap: 2,
-    pages: [],
-    scratch: null
+    pages: []
 }
 if (document.fonts)
     document.fonts.addEventListener('loadingdone', () => GLYPH_SPRITES.metrics.clear())
@@ -423,7 +422,10 @@ function buildGlyphCell(width, height, paint)
         page = {canvas, context: canvas.getContext('2d'), x: gap, y: gap, row: 0}
         store.pages.push(page)
     }
-    const scratch = store.scratch || (store.scratch = document.createElement('canvas'))
+    // A canvas per cell: WebKit copies a canvas source lazily, so a scratch
+    // resized for the next cell before the page is read would lose this one
+    // (cells are built back to back by buildPendingGlyphSprites)
+    const scratch = document.createElement('canvas')
     scratch.width = width
     scratch.height = height
     paint(scratch)
@@ -434,9 +436,49 @@ function buildGlyphCell(width, height, paint)
     return cell
 }
 
+// While defer is set (gameLoop's live frames, warmGlowSprites) glyph sprites
+// are not built where a string is drawn (TASK-888): a string with a missing
+// sprite is drawn as plain text (no glow) and its missing sprites are queued
+// here, oldest request first. buildPendingGlyphSprites (at the end of every
+// draw(), render/draw.js) builds them for up to budgetMs of performance.now()
+// time, at least one per call; once every sprite of a string exists it is
+// drawn with the glow. So the first frames neither build sprites nor copy a
+// new atlas page into the frame (its costly first use). Any other draw (a
+// frame frozen under a pause screen) builds what it draws, as before.
+const GLYPH_GLOW_QUEUE =
+{
+    budgetMs: 8,
+    defer: false,
+    // sprite key -> build(), in request order
+    pending: new Map()
+}
+
+// Builds queued glyph sprites, oldest first, until budgetMs is spent;
+// returns how many were built
+function buildPendingGlyphSprites(budgetMs = GLYPH_GLOW_QUEUE.budgetMs)
+{
+    const pending = GLYPH_GLOW_QUEUE.pending
+    if (!pending.size)
+        return 0
+    const start = performance.now()
+    let built = 0
+    for (const [key, build] of pending)
+    {
+        pending.delete(key)
+        if (GLYPH_SPRITES.cache.has(key))
+            continue
+        getGlowSprite(key, build, GLYPH_SPRITES)
+        ++built
+        if (performance.now() - start >= budgetMs)
+            break
+    }
+    return built
+}
+
 // drawGlowText for a changing string: the same box (the string's left and top
 // snap to whole canvas px as its sprite did), glyphs at their measured
-// advances; textAlign left/start, center and right/end (left to right)
+// advances; textAlign left/start, center and right/end (left to right).
+// Until all its glyph sprites exist: plain text, the sprites queued.
 function drawGlowGlyphs(text, x, y, shadowColor, blur, stroke)
 {
     const font = ctx.font, align = ctx.textAlign, baseline = ctx.textBaseline
@@ -467,9 +509,9 @@ function drawGlowGlyphs(text, x, y, shadowColor, blur, stroke)
     const style = '|' + font + '|left|' + baseline + '|' + fill + '|' + (stroke ? strokeStyle + '|' + lineWidth : '') +
         '|' + shadowColor + '|' + blur + '|' + alpha + '|' + sx + '|' + sy + '|'
 
-    ctx.save()
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.globalAlpha = 1
+    // Each ink glyph: its sprite key, build() and canvas px placement
+    const cells = []
+    let missing = false
     let originX = left + glyphs[0].left * sx
     for (const glyph of glyphs)
     {
@@ -479,7 +521,8 @@ function drawGlowGlyphs(text, x, y, shadowColor, blur, stroke)
             const ix = Math.floor(snapped), phaseX = snapped - ix
             // Canvas px from the sprite's top left to the glyph origin, less the phase
             const offsetX = pad + Math.ceil(glyph.left * sx), offsetY = pad + Math.ceil(glyph.ascent * sy)
-            const cell = getGlowSprite('glyph|' + glyph.ch + style + phaseX + '|' + phaseY, () =>
+            const key = 'glyph|' + glyph.ch + style + phaseX + '|' + phaseY
+            const build = () =>
                 buildGlyphCell(Math.min(store.pageSize - store.gap * 2, Math.ceil((glyph.left + glyph.right) * sx) + 1 + pad * 2),
                     Math.min(store.pageSize - store.gap * 2, Math.ceil((glyph.ascent + glyph.descent) * sy) + 1 + pad * 2),
                     canvas => paintGlowSprite(canvas, 0, sx, sy, -(offsetX + phaseX) / sx, -(offsetY + phaseY) / sy, alpha, () =>
@@ -495,11 +538,39 @@ function drawGlowGlyphs(text, x, y, shadowColor, blur, stroke)
                     if (stroke)
                         ctx.strokeText(glyph.ch, 0, 0)
                     ctx.fillText(glyph.ch, 0, 0)
-                })), store)
-            ctx.drawImage(cell.image, cell.x, cell.y, cell.width, cell.height,
-                ix - offsetX, iy - offsetY, cell.width, cell.height)
+                }))
+            if (!GLYPH_GLOW_QUEUE.defer)
+                GLYPH_GLOW_QUEUE.pending.delete(key)
+            else if (!store.cache.has(key))
+            {
+                missing = true
+                if (!GLYPH_GLOW_QUEUE.pending.has(key))
+                    GLYPH_GLOW_QUEUE.pending.set(key, build)
+            }
+            cells.push({key, build, x: ix - offsetX, y: iy - offsetY})
         }
         originX += glyph.advance * sx
+    }
+
+    ctx.save()
+    if (missing)
+    {
+        // Plain text in the caller's font, fill, stroke, alignment and
+        // position, without the glow
+        ctx.shadowBlur = 0
+        ctx.shadowColor = 'rgba(0, 0, 0, 0)'
+        if (stroke)
+            ctx.strokeText(text, x, y)
+        ctx.fillText(text, x, y)
+        ctx.restore()
+        return
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.globalAlpha = 1
+    for (const c of cells)
+    {
+        const cell = getGlowSprite(c.key, c.build, store)
+        ctx.drawImage(cell.image, cell.x, cell.y, cell.width, cell.height, c.x, c.y, cell.width, cell.height)
     }
     ctx.restore()
 }
