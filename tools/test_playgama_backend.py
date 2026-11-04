@@ -64,6 +64,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import start_browser_test
 from game_harness import READY, LOCAL_BRIDGE
 
+from build_release import GENERATED_FILES  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 ZIP = Path(os.environ.get('PLAYGAMA_ZIP') or
            ROOT / 'artifacts' / 'release-grapple-over' / 'playgama' / 'grapple-over-playgama.zip')
@@ -73,7 +75,8 @@ SDK_TAG = '<script src="%s"></script>' % SDK_URL
 BACKEND_TAG = '<script src = "platform/backends/playgama.js"></script>'
 GAME_BASE = 'https://grapple-over-local.test/playgama/'
 GAME_URL = GAME_BASE + 'index.html'
-REWRITTEN = {'index.html', 'buildconfig.js'}
+# Rewritten by the build, plus the files it generates (build-time bakes, no committed blob)
+REWRITTEN = {'index.html', 'buildconfig.js'} | set(GENERATED_FILES)
 ALL_MODES = ['grapple_over', 'bad', 'classic']
 
 CONTENT_TYPES = {'.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',

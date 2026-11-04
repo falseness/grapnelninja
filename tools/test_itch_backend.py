@@ -49,6 +49,8 @@ from game_harness import READY
 from test_go_back import SETUP, CANDIDATES, CATCH, AFTER
 from test_go_back_dialog import START, FALL, HOOKS
 
+from build_release import GENERATED_FILES  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 ZIP = Path(os.environ.get('ITCH_ZIP') or
            ROOT / 'artifacts' / 'release-grapple-over' / 'itch' / 'grapple-over-itch.zip')
@@ -59,7 +61,8 @@ FRAME_W, FRAME_H = 960, 540
 # The flags itch.io's game frame needs; 'same-origin' keeps localStorage
 SANDBOX = ('allow-scripts allow-same-origin allow-pointer-lock allow-forms '
            'allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals')
-REWRITTEN = {'index.html', 'buildconfig.js', 'analytics/backends/gameanalytics.js'}
+# Rewritten by the build, plus the files it generates (build-time bakes, no committed blob)
+REWRITTEN = {'index.html', 'buildconfig.js', 'analytics/backends/gameanalytics.js'} | set(GENERATED_FILES)
 GA_SDK = 'analytics/vendor/GameAnalytics.min.js'
 PROBE_KEY = 'grapnelninja.itchProbe'
 CLIMB_KEY = 'grapnelninja.grappleOver'

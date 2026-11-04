@@ -64,6 +64,8 @@ from game_harness import READY
 from test_go_back import SETUP, CANDIDATES, CATCH, AFTER
 from test_go_back_dialog import START, FALL, HOOKS
 
+from build_release import GENERATED_FILES  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 ZIP = Path(os.environ.get('GAMEPIX_ZIP') or
            ROOT / 'artifacts' / 'release-grapple-over' / 'gamepix' / 'grapple-over-gamepix.zip')
@@ -72,7 +74,8 @@ SDK_TAG = '<script src="%s"></script>' % SDK_URL
 BACKEND_TAG = '<script src = "platform/backends/gamepix.js"></script>'
 GAME_BASE = 'https://gamepix-local.test/grapple-over/'
 GAME_URL = GAME_BASE + 'index.html'
-REWRITTEN = {'index.html', 'buildconfig.js'}
+# Rewritten by the build, plus the files it generates (build-time bakes, no committed blob)
+REWRITTEN = {'index.html', 'buildconfig.js'} | set(GENERATED_FILES)
 
 CONTENT_TYPES = {'.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
                  '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json',

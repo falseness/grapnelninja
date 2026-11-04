@@ -74,6 +74,8 @@ from test_build_release import y8_env
 from test_go_back import SETUP, CANDIDATES, CATCH, AFTER
 from test_go_back_dialog import START, FALL, HOOKS
 
+from build_release import GENERATED_FILES  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 ZIP = Path(os.environ.get('Y8_ZIP') or ROOT / 'artifacts' / 'release-grapple-over' / 'y8' / 'grapple-over-y8.zip')
 SDK_URL = 'https://cdn.y8.com/minimal-sdk/2-0/y8.min.js'
@@ -81,7 +83,8 @@ SDK_TAG = '<script src="%s" async></script>' % SDK_URL
 BACKEND_TAG = '<script src = "platform/backends/y8.js"></script>'
 GAME_BASE = 'https://y8-local.test/grapple-over/'
 GAME_URL = GAME_BASE + 'index.html'
-REWRITTEN = {'index.html', 'buildconfig.js', 'analytics/backends/gameanalytics.js'}
+# Rewritten by the build, plus the files it generates (build-time bakes, no committed blob)
+REWRITTEN = {'index.html', 'buildconfig.js', 'analytics/backends/gameanalytics.js'} | set(GENERATED_FILES)
 GA_SDK = 'analytics/vendor/GameAnalytics.min.js'
 Y8_HOSTS = re.compile(r'^https://([a-z0-9-]+\.)*y8\.com/')
 ID_LINE = re.compile(r'App ID: (\S+)\s+Game ID: (\S+)')

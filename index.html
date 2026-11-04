@@ -4,6 +4,8 @@
         <meta charset="UTF-8">
         <title></title>
         <link rel="icon" type="image/svg+xml" href="favicon.svg">
+        <!-- TASK-892: the poster is fetched first, so it is decoded by the first paint -->
+        <link rel="preload" as="image" href="art/poster.webp" fetchpriority="high">
         <script src = "i18n.js"></script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
@@ -57,6 +59,28 @@
             {
                 display: none;
             }
+            /* Static poster (TASK-892): painted with the first HTML, before any
+               script runs; removed right after the first gameLoop frame
+               (removePoster). Never rotated: full window, cover-cropped (contained when portrait), the
+               art's sky colour behind it, input passes through. */
+            #poster
+            {
+                position: fixed;
+                inset: 0;
+                z-index: 1;
+                background-color: #10032c;
+                pointer-events: none;
+            }
+            #poster img
+            {
+                display: block;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }
+            /* A portrait window would crop the 16:9 art to its middle (the
+               title is lost): the whole poster, on the sky colour */
+            @media (orientation: portrait) { #poster img { object-fit: contain; } }
             #rotate-prompt { display: none; }
             @media (pointer: coarse) and (orientation: portrait) {
                 #stage { visibility: hidden; }
@@ -66,6 +90,8 @@
                     box-sizing: border-box; padding: 32px; text-align: center;
                     background: #080322; color: #bfffff; font: 24px/1.5 sans-serif;
                 }
+                /* Over the (contained) poster: no veil, the text in the sky band below the art */
+                #poster ~ #rotate-prompt { background: transparent; align-items: flex-end; padding-bottom: 12vh; }
             }
             #loading-title
             {
@@ -85,6 +111,7 @@
             <div id = "loading-progress" data-i18n = "loading.initial"></div>
             <button id="boot-retry" hidden data-i18n="loading.retry" onclick="this.disabled = true; location.reload()"></button>
         </div>
+        <div id="poster"><img src="art/poster.webp" alt="" decoding="sync" fetchpriority="high"></div>
         <div id="rotate-prompt" role="status" data-i18n="orientation.rotate"></div>
         <script>I18N.applyDom()</script>
         <div id = "stage">
@@ -245,6 +272,7 @@
                         // Pause handlers must not draw over the retry screen
                         bootComplete = false
                         console.error('Application boot failed', error)
+                        removePoster()
                         document.getElementById('loading').hidden = false
                         setLoadingProgress(I18N.t('loading.failed'))
                         const retry = document.getElementById('boot-retry')
@@ -656,7 +684,15 @@
                 GLYPH_GLOW_QUEUE.defer = true
                 try { gameLoopFrame(frameTime) }
                 finally { GLYPH_GLOW_QUEUE.defer = false }
+                // The first frame is on the canvas: the poster goes before its paint
+                removePoster()
                 game = requestAnimationFrame(gameLoop)
+            }
+            // TASK-892: the static poster of index.html (#poster)
+            function removePoster()
+            {
+                const poster = document.getElementById('poster')
+                if (poster) poster.remove()
             }
 
             function gameLoopFrame(frameTime)
