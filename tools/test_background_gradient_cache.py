@@ -82,6 +82,17 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
         render_snapshot.boot_frozen(page)
         load = page.evaluate(TAKE_SCRIPT)
         load_all = page.evaluate(TAKE_ALL_SCRIPT)
+        # TASK-889: part canvases of the parallax tiles painted cheap at load (0 on older trees)
+        cheap_paints = page.evaluate('''() => {
+            const store = typeof GRAPPLE_OVER_PARALLAX_TILES != 'undefined' && GRAPPLE_OVER_PARALLAX_TILES
+            if (!store || !store.log) return 0
+            let n = 0
+            for (const [key, built] of store.log.built)
+                if (built.cheap)
+                    for (const part of store.cache.get(key).parts)
+                        n += 1 + (part.rest ? 1 : 0)
+            return n
+        }''')
         page.evaluate(render_snapshot.SETUP_SCRIPT, [script, True])
         menu = page.evaluate(MENU_SCRIPT, frames)
         page.evaluate('mode => startGame(mode)', mode)
@@ -109,7 +120,8 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
         for tick in range(frames + 1, frames + 11):
             page.evaluate(render_snapshot.ADVANCE_SCRIPT, tick)
             resized.append(page.evaluate(TAKE_SCRIPT))
-        return {'rev': rev_id, 'mode': mode, 'frames': frames, 'load': load, 'load_all': load_all, 'menu': menu, 'game': game,
+        return {'rev': rev_id, 'mode': mode, 'frames': frames, 'load': load, 'load_all': load_all,
+                'cheap_paints': cheap_paints, 'menu': menu, 'game': game,
                 'game_all': game_all,
                 'resized_canvas': size, 'resized': resized, 'page_errors': errors}
 
@@ -118,7 +130,7 @@ class BackgroundGradientCacheTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.r = background_gradient_counts(os.environ.get('GRADIENT_REV', 'worktree'))
-        print('rev', cls.r['rev'], 'load', cls.r['load'], 'game[:3]', cls.r['game'][:3], 'resized', cls.r['resized'],
+        print('rev', cls.r['rev'], 'load', cls.r['load'], 'load_all', cls.r['load_all'], 'cheap_paints', cls.r['cheap_paints'], 'game[:3]', cls.r['game'][:3], 'resized', cls.r['resized'],
               'menu[:3]', cls.r['menu'][:3], 'game_all', cls.r['game_all'],
               file=sys.stderr, flush=True)  # before unittest's summary, so the log ends with OK
 
@@ -135,7 +147,14 @@ class BackgroundGradientCacheTest(unittest.TestCase):
         # 3990818), 25 bounce material sprites (TASK-639 b217437), 4 landmarks
         # (TASK-541 1e2ad62), 1 bounce contact atlas (TASK-641 0e33913) and the
         # tutorial bounce legend (TASK-663 cd269b6). No legacy washes.
-        self.assertEqual(self.r['load_all'], 86)
+        # TASK-889: the first live frame (the load) builds only the on-screen
+        # parallax bands and paints the dithered bakes cheap; the rest is
+        # queued, and startGame's draw here (not a live frame) builds what is
+        # still missing: the same 86, split between the load and game frame 0.
+        # The on-screen parallax tiles the load paints cheap (8-bit) are
+        # painted again exact: one gradient per part canvas (cheap_paints).
+        self.assertLess(self.r['load_all'], 86)
+        self.assertEqual(self.r['load_all'] + self.r['game_all'][0] - self.r['cheap_paints'], 86)
 
     def test_next_frames_build_none(self):
         self.assertEqual(self.r['menu'], [0] * FRAMES)

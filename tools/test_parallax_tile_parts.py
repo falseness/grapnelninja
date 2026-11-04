@@ -93,6 +93,8 @@ class ParallaxTilePartsTests(unittest.TestCase):
             page.on('pageerror', lambda e: errors.append(str(e)))
             page.goto(url + 'index.html', wait_until='load')
             wait_for_boot_run(page)
+            # TASK-889: the boot frame builds the bands on screen, later frames the rest
+            page.wait_for_function('() => !parallaxTilesPending()', timeout=60000)
             self.assertTrue(page.evaluate('GRADIENT_DITHER.enabled'))
             rows = page.evaluate(COMPARE)
             rebuild = page.evaluate(REBUILD)

@@ -179,6 +179,83 @@ const GRADIENT_DITHER = (function()
     }
 })()
 
+// Background bakes deferred off the first frames (TASK-889). In a live frame
+// (GLYPH_GLOW_QUEUE.defer: inside gameLoop, not a frame frozen under a pause
+// screen) a dithered background bake that is missing (the crystal tile, the
+// vignette image, the palette strips) is not built: the frame paints that
+// layer the cheap way (its plain 8-bit gradient fills: same colours and stops,
+// no float16 scratch, no dither) and the bake is queued here. A missing
+// landmark sprite (render/landmarks.js) and the near rock tile are queued
+// and skipped for the frame (the rock tile's edge fill is still drawn). Parallax tiles
+// of bands not on screen are queued too, and the on-screen ones a scale
+// change builds are painted cheap (8-bit) and rebuilt exact (render/parallax.js). From the next
+// frame on, the end of draw() builds one queued job per frame
+// (buildPendingBackgroundBakes); the frame after a bake lands draws it. Any
+// other draw builds what it draws, as before. A resize or DPR change makes
+// new keys: the same rule applies.
+const BACKGROUND_BAKE_QUEUE =
+{
+    // {owner, name, key, build, done}: build() stores {key, ...} on owner[name]
+    // (or what done() checks) and returns its canvas (or a layer tile:
+    // {strips: [{canvas}]})
+    jobs: [],
+    // drawFrameId of the last frame that queued new work (no job runs in it)
+    queuedFrame: -1,
+    // jobs built so far (diagnostics)
+    built: 0,
+    // 1x1 canvas each built image is drawn into
+    warm: null
+}
+
+// True when this live frame defers the bake of owner[name] (with key): queued
+// (once) for a later frame. False: the caller builds it now. done() tells a
+// job already built by another draw (default: owner[name].key is key).
+function deferBackgroundBake(owner, name, key, build, done)
+{
+    if (!GLYPH_GLOW_QUEUE.defer || !GRADIENT_DITHER.enabled)
+        return false
+    const queue = BACKGROUND_BAKE_QUEUE
+    if (!queue.jobs.some(job => job.owner === owner && job.name === name && job.key === key))
+    {
+        queue.jobs.push({owner, name, key, build, done: done || (() => owner[name] && owner[name].key === key)})
+        queue.queuedFrame = drawFrameId
+    }
+    return true
+}
+
+function backgroundBakesPending()
+{
+    return BACKGROUND_BAKE_QUEUE.jobs.length > 0 || parallaxTilesPending()
+}
+
+// One queued background job (a cheap on-screen parallax tile made exact,
+// else the oldest bake, else the parallax tile of the nearest band), not in a frame that queued work; returns true if one ran
+function buildPendingBackgroundBakes()
+{
+    const queue = BACKGROUND_BAKE_QUEUE
+    if (queue.queuedFrame === drawFrameId)
+        return false
+    // On-screen parallax tiles the boot frame painted cheap come first
+    if (rebuildCheapParallaxTile())
+        return true
+    while (queue.jobs.length)
+    {
+        const job = queue.jobs.shift()
+        // A frozen frame may have built it meanwhile
+        if (job.done())
+            continue
+        const result = job.build()
+        // Uploaded here, not in the frame that first draws it
+        const warm = queue.warm || (queue.warm = document.createElement('canvas').getContext('2d'))
+        warm.canvas.width = warm.canvas.height = 1
+        for (const image of result.strips ? result.strips.map(strip => strip.canvas) : [result])
+            warm.drawImage(image, 0, 0, 1, 1)
+        ++queue.built
+        return true
+    }
+    return buildPendingParallaxTile()
+}
+
 // HUD labels recur every frame. Retain their metrics as well as their pixels;
 // measureText otherwise repeats font shaping even when the glow sprite exists.
 // Game labels use the default kerning, spacing and font variant settings.

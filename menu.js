@@ -808,8 +808,10 @@ class Menu
             continueOffer.draw()
         }
         // A live frame may show HUD text still waiting for its glyph glow
-        // (render/glowsprites.js): the frozen frame is drawn complete
-        else if (GLYPH_GLOW_QUEUE.pending.size)
+        // or a cheap background layer (render/glowsprites.js): the frozen
+        // frame is drawn complete
+        else if (GLYPH_GLOW_QUEUE.pending.size || BACKGROUND_BAKE_QUEUE.jobs.length ||
+                 GRAPPLE_OVER_PARALLAX_TILES.cheap.length)
             draw()
         this.drawPauseScreen()
         // After the panel is drawn: Grapple Over's pause interstitial

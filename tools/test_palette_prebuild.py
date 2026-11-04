@@ -105,6 +105,10 @@ class PalettePrebuildTests(unittest.TestCase):
             # parallax layers are not the palette (re-cut with +-1/2 resampling by 5d6458e TASK-788)
             page.goto(url + 'index.html?parallax=0', wait_until='load')
             wait_for_boot_run(page)
+            # TASK-889: live frames build the strips after the boot frame; wait for them
+            # (trees before it have no backgroundBakesPending and build them in the boot frame)
+            page.wait_for_function("() => typeof backgroundBakesPending != 'function' || !backgroundBakesPending()",
+                                   timeout=60000)
             page.evaluate(FREEZE)
             out = [page.evaluate(RENDER, bands) for _, bands in HEIGHTS]
             self.assertEqual(errors, [])

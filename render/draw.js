@@ -46,7 +46,9 @@ const GRAPPLE_OVER_PALETTE_STRIP = 256
 // drawGrappleOverPalette.images (index -> getSmoothImage owner). Each new strip
 // is drawn once into a 1x1 canvas so its upload happens here, not in the
 // frame that first shows it. Rebuilt only when the frame size, transform or
-// noise kind change (resize, DPR, fast backdrop).
+// noise kind change (resize, DPR, fast backdrop). A live frame queues the
+// missing strips instead (BACKGROUND_BAKE_QUEUE, one per later frame) and
+// gets null until all of them exist: the wash is then filled the cheap way.
 function buildGrappleOverPaletteStrips(context, bounds, paint)
 {
     const m = context.getTransform()
@@ -60,13 +62,20 @@ function buildGrappleOverPaletteStrips(context, bounds, paint)
         (drawGrappleOverPalette.warm = document.createElement('canvas').getContext('2d'))
     warm.canvas.width = warm.canvas.height = 1
     const strip = {x: bounds.x, y: bounds.y, width: GRAPPLE_OVER_PALETTE_STRIP / Math.abs(m.a), height: bounds.height}
+    let complete = true
     GRAPPLE_OVER_THEME.palettes.forEach((p, index) =>
     {
         const owner = images.get(index) || {}
         images.set(index, owner)
-        warm.drawImage(visualEffects.background.getSmoothImage(owner, 'image', strip,
-            target => paint(target, index), 'opaque'), 0, 0, 1, 1)
+        const image = visualEffects.background.getSmoothImage(owner, 'image', strip,
+            target => paint(target, index), 'opaque', true)
+        if (image)
+            warm.drawImage(image, 0, 0, 1, 1)
+        else
+            complete = false
     })
+    if (!complete)
+        return null
     return drawGrappleOverPalette.strips = {key, images,
         x: Math.round(bounds.x * m.a + m.e), y: Math.round(bounds.y * m.d + m.f),
         width: Math.max(1, Math.round(bounds.width * Math.abs(m.a)))}
@@ -127,9 +136,10 @@ function drawGrappleOverPalette(context, bounds, palette, smooth)
     context.fillStyle = '#000000'
     context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height)
     context.globalCompositeOperation = 'lighter'
-    if (smooth)
+    // null: some strip's bake is deferred, the gradients are filled this frame
+    const strips = smooth && buildGrappleOverPaletteStrips(context, bounds, paintLayer)
+    if (strips)
     {
-        const strips = buildGrappleOverPaletteStrips(context, bounds, paintLayer)
         context.setTransform(1, 0, 0, 1, 0, 0)
         for (const [index, weight] of layers)
         {
@@ -360,4 +370,6 @@ function draw()
 
     // Glyph glow sprites the frame asked for, under a time budget (render/glowsprites.js)
     buildPendingGlyphSprites()
+    // Then one deferred background bake (render/glowsprites.js)
+    buildPendingBackgroundBakes()
 }

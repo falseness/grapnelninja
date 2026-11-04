@@ -56,8 +56,19 @@ function drawGrappleOverParallax(renderer, palette)
 // Every band's tiles for one pixel scale, outside the glow sprite LRU so none
 // is dropped and rebuilt mid-climb. fills are the fill strips' canvases,
 // kept and resized by a rebuild, so a rebuild creates only the canvases the
-// whole tiles did.
-const GRAPPLE_OVER_PARALLAX_TILES = {cache: new Map(), scale: null, warm: null, fills: []}
+// whole tiles did (fillCount: how many this scale's tiles took).
+// pending: [layer, band] of the tiles not built yet at this scale (TASK-889):
+// a live frame builds only the tiles it draws, later frames one each
+// (nearest band to band first: the last band drawn). stats counts builds by
+// when they happened: initial (drawn in the frame of a scale change), ahead
+// (from the queue, before any frame drew them), late (queued but needed by a
+// frame before the queue reached them: must stay 0) and sync (outside a live
+// frame: everything at once, as before); cheap: [layer, band] of initial
+// tiles painted cheap (8-bit), rebuilt exact first (stats.exact). log: by tile key, the drawFrameId it
+// was built in (and why) and first drawn in (tools/test_parallax_band_builds.py).
+const GRAPPLE_OVER_PARALLAX_TILES = {cache: new Map(), scale: null, warm: null, fills: [], fillCount: 0,
+    pending: [], cheap: [], scaleFrame: -1, band: 0, stats: {initial: 0, ahead: 0, late: 0, sync: 0, exact: 0},
+    log: {built: new Map(), drawn: new Map()}}
 
 // Fill strip widths tried, in tile px: the widest strip sets the most copies
 // a tile row draws
@@ -76,8 +87,93 @@ function parallaxFillStrip(width)
 
 function getGrappleOverParallaxTile(layer, band, pixelScale)
 {
-    buildGrappleOverParallaxTiles(pixelScale)
-    return GRAPPLE_OVER_PARALLAX_TILES.cache.get('parallax|' + layer.name + '|' + band + '|' + pixelScale)
+    const store = GRAPPLE_OVER_PARALLAX_TILES
+    buildGrappleOverParallaxTiles(pixelScale, layer, band)
+    store.band = band
+    const key = 'parallax|' + layer.name + '|' + band + '|' + pixelScale
+    if (!store.log.drawn.has(key))
+        store.log.drawn.set(key, drawFrameId)
+    return store.cache.get(key)
+}
+
+function parallaxTilesPending()
+{
+    return GRAPPLE_OVER_PARALLAX_TILES.pending.length > 0 || GRAPPLE_OVER_PARALLAX_TILES.cheap.length > 0
+}
+
+// Builds the pending tile of layer and band (why: a stats name). The tiles a
+// live frame needs at a scale change ('initial': the boot frame) are painted
+// cheap when GRADIENT_DITHER is on and kept in store.cheap until
+// rebuildCheapParallaxTile paints them exact (the first queued job).
+function buildPendingParallaxTileAt(layer, band, why)
+{
+    const store = GRAPPLE_OVER_PARALLAX_TILES
+    const i = store.pending.findIndex(([l, b]) => l === layer && b === band)
+    if (i < 0)
+        return
+    store.pending.splice(i, 1)
+    const pixelScale = store.scale
+    const key = 'parallax|' + layer.name + '|' + band + '|' + pixelScale
+    const cheap = why === 'initial' && GRADIENT_DITHER.enabled
+    const tile = buildGrappleOverParallaxTile(layer, band, pixelScale,
+        () =>
+        {
+            const n = store.fillCount++
+            return store.fills[n] || (store.fills[n] = document.createElement('canvas'))
+        }, cheap)
+    store.cache.set(key, tile)
+    if (cheap)
+        store.cheap.push([layer, band])
+    else
+        warmParallaxTile(tile)
+    ++store.stats[why]
+    store.log.built.set(key, {frame: drawFrameId, why, cheap})
+}
+
+// Its upload happens here, not in the frame that first draws it (a cheap
+// tile is drawn in the frame that builds it)
+function warmParallaxTile(tile)
+{
+    const warm = GRAPPLE_OVER_PARALLAX_TILES.warm
+    for (const part of tile.parts)
+        for (const image of [part.canvas, part.rest])
+            if (image)
+                warm.drawImage(image, 0, 0, 1, 1)
+}
+
+// Paints the oldest cheap tile exact into the same fill canvases; returns
+// true if one was
+function rebuildCheapParallaxTile()
+{
+    const store = GRAPPLE_OVER_PARALLAX_TILES
+    if (!store.cheap.length)
+        return false
+    const [layer, band] = store.cheap.shift()
+    const key = 'parallax|' + layer.name + '|' + band + '|' + store.scale
+    const fills = store.cache.get(key).parts.slice(1).flatMap(part => [part.canvas, part.rest]).filter(Boolean)
+    const tile = buildGrappleOverParallaxTile(layer, band, store.scale, () => fills.shift(), false)
+    store.cache.set(key, tile)
+    warmParallaxTile(tile)
+    ++store.stats.exact
+    store.log.built.get(key).exactFrame = drawFrameId
+    return true
+}
+
+// One pending tile, of the band nearest the last one drawn (BACKGROUND_BAKE_QUEUE);
+// returns true if one was built
+function buildPendingParallaxTile()
+{
+    const store = GRAPPLE_OVER_PARALLAX_TILES
+    if (rebuildCheapParallaxTile())
+        return true
+    if (!store.pending.length)
+        return false
+    let next = store.pending[0]
+    for (const entry of store.pending)
+        if (Math.abs(entry[1] - store.band) < Math.abs(next[1] - store.band))
+            next = entry
+    buildGrappleOverParallaxTiles(store.scale, next[0], next[1], 'ahead')
+    return true
 }
 
 // {width, height (tile px), parts: [{canvas, y, rows, rest}]}: each part is
@@ -86,13 +182,16 @@ function getGrappleOverParallaxTile(layer, band, pixelScale)
 // A fill part (rest set) is its strip repeated across the tile, then rest,
 // the strip of the width left (null when none is): canvases from fill(),
 // resized.
-function buildGrappleOverParallaxTile(layer, band, pixelScale, fill)
+function buildGrappleOverParallaxTile(layer, band, pixelScale, fill, cheap)
 {
     const {width, height, top, bottom} = parallaxTileRows(layer, band, pixelScale)
+    // cheap: painted straight into the 8-bit canvases (no float16 bake, the
+    // browser's own gradient dither), same rows and parts
+    const smooth = !cheap
     const paint = (canvas, x, y) => paintGlowSprite(canvas, 0, pixelScale, pixelScale, x / pixelScale, y / pixelScale, 1,
-        paintGrappleOverParallaxTile, [layer, band], true)
+        paintGrappleOverParallaxTile, [layer, band], smooth)
     const parts = [{y: top, rows: bottom - top, canvas: buildGlowSprite(width, bottom - top, 0, pixelScale, pixelScale,
-        0, top / pixelScale, 1, paintGrappleOverParallaxTile, [layer, band], true)}]
+        0, top / pixelScale, 1, paintGrappleOverParallaxTile, [layer, band], smooth)}]
     if (bottom < height)
     {
         // The rest is painted at its own px of the tile: where the tile's
@@ -107,7 +206,7 @@ function buildGrappleOverParallaxTile(layer, band, pixelScale, fill)
             }
         parts.push({y: bottom, rows: height - bottom, canvas, rest})
     }
-    return {width, height, parts}
+    return {width, height, parts, cheap: Boolean(cheap)}
 }
 
 // Tile px: the tile's size, the first painted row (top) and the first of the
@@ -172,31 +271,43 @@ function parallaxTileOutline(layer, band)
     return {outline, random}
 }
 
-// Builds the tiles of every layer and band when the pixel scale is first
-// known or changes (resize, DPR), like the palette strips: each new tile is
-// drawn once into a 1x1 canvas so its upload happens here, not in the frame
-// a band change first shows it (1-2 Mpx per band at 1706x932 DPR 1.5)
-function buildGrappleOverParallaxTiles(pixelScale)
+// Starts the tiles of every layer and band over when the pixel scale is
+// first known or changes (resize, DPR), like the palette strips: each new
+// tile is drawn once into a 1x1 canvas so its upload happens when it is
+// built, not in the frame a band change first shows it (1-2 Mpx per band at
+// 1706x932 DPR 1.5). Outside a live frame (GLYPH_GLOW_QUEUE.defer) all are
+// built here, as before; a live frame builds only the tile of layer and band
+// (the one it draws) if pending and leaves the rest pending (later frames
+// build them: buildPendingParallaxTile, why 'ahead').
+function buildGrappleOverParallaxTiles(pixelScale, layer, band, why)
 {
     const store = GRAPPLE_OVER_PARALLAX_TILES
-    if (store.scale === pixelScale)
+    if (store.scale !== pixelScale)
+    {
+        store.scale = pixelScale
+        store.scaleFrame = drawFrameId
+        store.cache.clear()
+        store.fillCount = 0
+        store.cheap = []
+        const warm = store.warm || (store.warm = document.createElement('canvas').getContext('2d'))
+        warm.canvas.width = warm.canvas.height = 1
+        store.pending = []
+        for (const layer of GRAPPLE_OVER_PARALLAX.layers)
+            layer.motifs.forEach((motif, band) => store.pending.push([layer, band]))
+    }
+    if (GLYPH_GLOW_QUEUE.defer)
+    {
+        // No queued job runs in the frame of a scale change
+        if (store.scaleFrame === drawFrameId)
+            BACKGROUND_BAKE_QUEUE.queuedFrame = drawFrameId
+        if (layer)
+            buildPendingParallaxTileAt(layer, band, why || (store.scaleFrame === drawFrameId ? 'initial' : 'late'))
         return
-    store.scale = pixelScale
-    store.cache.clear()
-    const warm = store.warm || (store.warm = document.createElement('canvas').getContext('2d'))
-    warm.canvas.width = warm.canvas.height = 1
-    let fills = 0
-    const fill = n => store.fills[n] || (store.fills[n] = document.createElement('canvas'))
-    for (const layer of GRAPPLE_OVER_PARALLAX.layers)
-        layer.motifs.forEach((motif, band) =>
-        {
-            const tile = buildGrappleOverParallaxTile(layer, band, pixelScale, () => fill(fills++))
-            store.cache.set('parallax|' + layer.name + '|' + band + '|' + pixelScale, tile)
-            for (const part of tile.parts)
-                for (const image of [part.canvas, part.rest])
-                    if (image)
-                        warm.drawImage(image, 0, 0, 1, 1)
-        })
+    }
+    while (rebuildCheapParallaxTile())
+        ;
+    while (store.pending.length)
+        buildPendingParallaxTileAt(store.pending[0][0], store.pending[0][1], 'sync')
 }
 
 // Repeats tile (w x h logical) across bounds from (x, y). Edges are snapped to

@@ -93,10 +93,17 @@ function drawGrappleOverLandmarks(renderer)
         if (weight <= 0 || left > bounds.x + bounds.width || left + config.width < bounds.x ||
             top > bounds.y + bounds.height || top + config.height < bounds.y)
             continue
-        const sprite = getGlowSprite('landmark|' + anchor.band + '|' + pixelScale, () =>
+        const key = 'landmark|' + anchor.band + '|' + pixelScale
+        const build = () => getGlowSprite(key, () =>
             buildGlowSprite(Math.round((config.width + 2 * config.pad) * pixelScale),
                 Math.round((config.height + 2 * config.pad) * pixelScale), config.pad * pixelScale,
                 pixelScale, pixelScale, 0, 0, 1, paintGrappleOverLandmark, [anchor.band], true))
+        // A live frame queues a missing sprite (BACKGROUND_BAKE_QUEUE) and
+        // shows the landmark from the frame after it is built
+        if (!GLOW_SPRITES.cache.has(key) &&
+            deferBackgroundBake(GLOW_SPRITES, key, key, build, () => GLOW_SPRITES.cache.has(key)))
+            continue
+        const sprite = build()
         context.globalAlpha = config.alpha * weight
         context.drawImage(sprite, left - config.pad, top - config.pad,
             config.width + 2 * config.pad, config.height + 2 * config.pad)

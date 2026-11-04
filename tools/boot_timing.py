@@ -23,7 +23,12 @@ With --profile, every size gets --runs extra boots under the CDP sampling profil
 navigation to two frames after run ready; separate from the timing boots so the profiler's overhead
 does not skew the timings) and reports inclusive CPU ms of the boot's lazy cache builders
 (PROFILED_FUNCTIONS, matched by function name and file basename; 0 when never sampled, e.g. once a
-cache is baked at build time). Profiling needs Chromium (WebKit sizes skip it).
+cache is baked at build time). Profiling needs Chromium (WebKit sizes skip it). The same functions
+are also reported for the first gameLoop frame alone as first_frame.<name> (TASK-889): the samples
+from the first one whose stack holds gameLoop up to the next (idle) sample - work deferred to later
+frames (render/glowsprites.js BACKGROUND_BAKE_QUEUE, GLYPH_GLOW_QUEUE) lands inside the whole window
+but not in the first frame. first_frame.window_ms is that span's sampled CPU ms (0 and no
+first_frame.* split when no sample names gameLoop, e.g. a minified bundle).
 
 Output (--out FILE, else stdout): compact JSON {meta, sizes: {name: {runs: [...], median: {...},
 profile_runs: [...], profile_median: {...}}}}.
@@ -281,6 +286,26 @@ def aggregate_profile(prof):
             i = parent.get(i)
     out = {k: round(incl.get(k, 0) / 1000, 1) for k in PROFILED_FUNCTIONS}
     out['profiled_total_ms'] = round(sum(deltas) / 1000, 1)
+    # The first gameLoop frame: first sample under gameLoop up to the next (idle) sample
+    first, window, started = collections.Counter(), 0, False
+    for s, d in zip(prof['samples'], deltas[1:] + [0]):
+        names, i = [], s
+        while i in nodes:
+            f = nodes[i]['callFrame']
+            names.append((f['functionName'], f['url'].split('?')[0].split('/')[-1]))
+            i = parent.get(i)
+        if not started:
+            if not any(n == 'gameLoop' for n, _ in names):
+                continue
+            started = True
+        if names and names[0][0] == '(idle)':
+            break
+        window += d
+        for key in {wanted[n] for n in names if n in wanted}:
+            first[key] += d
+    for k in PROFILED_FUNCTIONS:
+        out['first_frame.' + k] = round(first.get(k, 0) / 1000, 1)
+    out['first_frame.window_ms'] = round(window / 1000, 1)
     return out
 
 

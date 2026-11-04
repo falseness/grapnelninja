@@ -334,13 +334,18 @@ class BackgroundRenderer
             // backdrop resolution (the last soft layer carries the dither)
             const bounds = this.fillBounds()
             const fast = typeof BACKDROP != 'undefined' && BACKDROP.active
-            this.ctx.drawImage(this.getSmoothImage(gradients, fast ? 'vignetteFast' : 'vignetteImage', bounds,
+            const image = this.getSmoothImage(gradients, fast ? 'vignetteFast' : 'vignetteImage', bounds,
                 (context, b) =>
                 {
                     context.fillStyle = gradients.vignette
                     context.fillRect(b.x, b.y, b.width, b.height)
-                }, fast ? 'alpha' : undefined), bounds.x, bounds.y, bounds.width, bounds.height)
-            return
+                }, fast ? 'alpha' : undefined, true)
+            // null: its bake is deferred (BACKGROUND_BAKE_QUEUE), the gradient is filled this frame
+            if (image)
+            {
+                this.ctx.drawImage(image, bounds.x, bounds.y, bounds.width, bounds.height)
+                return
+            }
         }
         this.ctx.fillStyle = gradients.vignette
         this.fillAll()
@@ -352,8 +357,9 @@ class BackgroundRenderer
     // backdrop (enlarged into the frame) the noise is blue. Smooth (no kind):
     // at SMOOTH_IMAGE_SCALE of the device resolution, rounded to 8 bits, drawn
     // enlarged (bilinear). No gradient fill reaches the frame, so the browser
-    // adds no dither.
-    getSmoothImage(owner, name, bounds, paint, kind)
+    // adds no dither. deferrable: a live frame may queue a missing image
+    // (BACKGROUND_BAKE_QUEUE) and get null; the caller then paints the cheap way.
+    getSmoothImage(owner, name, bounds, paint, kind, deferrable)
     {
         const m = this.ctx.getTransform()
         const scale = kind ? 1 : SMOOTH_IMAGE_SCALE
@@ -364,17 +370,23 @@ class BackgroundRenderer
         const cached = owner[name]
         if (cached && cached.key === key)
             return cached.canvas
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        GRADIENT_DITHER.paint8(canvas, context =>
+        const build = () =>
         {
-            context.setTransform(w / bounds.width, 0, 0, h / bounds.height,
-                -bounds.x * w / bounds.width, -bounds.y * h / bounds.height)
-            paint(context, bounds)
-        }, noise, kind === 'alpha')
-        owner[name] = {key, canvas}
-        return canvas
+            const canvas = document.createElement('canvas')
+            canvas.width = w
+            canvas.height = h
+            GRADIENT_DITHER.paint8(canvas, context =>
+            {
+                context.setTransform(w / bounds.width, 0, 0, h / bounds.height,
+                    -bounds.x * w / bounds.width, -bounds.y * h / bounds.height)
+                paint(context, bounds)
+            }, noise, kind === 'alpha')
+            owner[name] = {key, canvas}
+            return canvas
+        }
+        if (deferrable && deferBackgroundBake(owner, name, key, build))
+            return null
+        return build()
     }
     // Motes retain their original mode-specific drift and twinkle clock.
     getAnimationTime()
@@ -415,8 +427,9 @@ class BackgroundRenderer
     }
     // A crystal/rock tile for this viewport size, built once by paint
     // (a resize builds a new one). A smooth tile (gradient fills) is painted
-    // by GRADIENT_DITHER.
-    getLayerTile(name, width, height, config, paint, smooth)
+    // by GRADIENT_DITHER. A live frame queues a missing smooth (or deferrable)
+    // one (BACKGROUND_BAKE_QUEUE) and gets null: the caller paints the cheap way.
+    getLayerTile(name, width, height, config, paint, smooth, deferrable)
     {
         const pixelScale = Math.max(0.25, Math.min(config.maxPixelScale, this.canvas.width / width || 1))
         const key = [width, height, pixelScale].join('|')
@@ -424,7 +437,13 @@ class BackgroundRenderer
 
         if (cached && cached.key === key)
             return cached
-
+        const build = () => this.buildLayerTile(name, key, pixelScale, width, height, config, paint, smooth)
+        if ((smooth || deferrable) && deferBackgroundBake(this.layerCache, name, key, build))
+            return null
+        return build()
+    }
+    buildLayerTile(name, key, pixelScale, width, height, config, paint, smooth)
+    {
         const layerCanvas = document.createElement('canvas')
         layerCanvas.width = Math.max(1, Math.round(width * pixelScale))
         layerCanvas.height = Math.max(1, Math.round(height * pixelScale))
@@ -662,14 +681,34 @@ class BackgroundRenderer
                 ctx.fillRect(0, 0, w, h)
                 delete this.layerCache.far
             }, true)
-        this.drawLayerTile(baked, width, height, shift, STYLE.colors.background.crystalRock,
-            this.getGradients(width, height).haze)
+        const haze = this.getGradients(width, height).haze
+        if (baked)
+            return this.drawLayerTile(baked, width, height, shift, STYLE.colors.background.crystalRock, haze)
+        // Its bake is deferred (a live frame): this frame gets the base
+        // gradient and the haze as plain fills at the tile's place (no far
+        // crystals), the same stops as the tile's
+        const bounds = this.fillBounds()
+        const gradients = this.getGradients(width, height)
+        this.ctx.save()
+        this.ctx.translate(0, shift.y)
+        for (const style of [gradients.gradient, haze])
+        {
+            this.ctx.fillStyle = style
+            this.ctx.fillRect(bounds.x, 0, bounds.width, height)
+        }
+        this.ctx.restore()
+        this.drawLayerEdges(height, shift, STYLE.colors.background.crystalRock, haze)
     }
     drawNearLayer(width, height, shift)
     {
         const layer = this.getLayerTile('near', width, height, STYLE.caveLayers.nearRocks,
-            (...args) => this.paintNearTile(...args))
-        this.drawLayerTile(layer, width, height, shift, STYLE.colors.background.nearRock)
+            (...args) => this.paintNearTile(...args), false, true)
+        if (layer)
+            this.drawLayerTile(layer, width, height, shift, STYLE.colors.background.nearRock)
+        else
+            // Its build is deferred (a live frame): the rocks come a frame
+            // later, the rows past the tile get their fill now
+            this.drawLayerEdges(height, shift, STYLE.colors.background.nearRock)
     }
     // Tiles a layer across fillBounds() at shift. Tile edges are snapped to
     // device pixels so neighbouring copies neither overlap nor leave a gap;
@@ -694,7 +733,13 @@ class BackgroundRenderer
             left = next
             ++k
         }
-
+        this.drawLayerEdges(height, shift, edgeFill, edgeOverlay)
+    }
+    // edgeFill (then edgeOverlay) over the fillBounds() rows above and below
+    // a layer of height drawn at shift
+    drawLayerEdges(height, shift, edgeFill, edgeOverlay)
+    {
+        const bounds = this.fillBounds()
         const edges = []
         if (bounds.y < shift.y)
             edges.push([bounds.x, bounds.y, bounds.width, shift.y - bounds.y])
