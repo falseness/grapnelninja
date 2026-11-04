@@ -6,6 +6,8 @@
 - tools/test_boot_steady_state.py: a boot recorded as a reference and compared against itself (the
   same PNG) reports 0 differing pixels; a second boot of the same tree compared with it runs and
   reports a well-formed entry (max channel diff, differing-pixel count).
+  Since TASK-890 routeArrowsFor (NOT_CALLED_BY_BOOT) may be 0: the boot computes arrows through
+  computeRouteArrow, which must be positive.
 - the SCREEN MATRIX has 13 sizes and the TIMING SET is a subset of it.
 """
 import json
@@ -16,6 +18,7 @@ import tempfile
 import unittest
 
 TOOLS = Path(__file__).resolve().parent
+NOT_CALLED_BY_BOOT = {'routeArrowsFor'}
 sys.path.insert(0, str(TOOLS))
 
 import boot_timing as bt  # noqa: E402
@@ -53,7 +56,12 @@ class BootTimingTest(unittest.TestCase):
             for k in list(bt.PROFILED_FUNCTIONS) + ['profiled_total_ms', 'run_ready_ms']:
                 v = entry['profile_median'][k]
                 self.assertIsInstance(v, (int, float), k)
-                self.assertGreater(v, 0, k)
+                # Since TASK-890 a boot computes route arrows one by one (computeRouteArrow); the
+                # all-at-once routeArrowsFor is only called by tools
+                if k in NOT_CALLED_BY_BOOT:
+                    self.assertGreaterEqual(v, 0, k)
+                else:
+                    self.assertGreater(v, 0, k)
             self.assertEqual(result['meta']['page_error_count'], 0, result['meta']['page_errors'])
             # A/A compare of a file with itself
             cmp_out = Path(d) / 'c.json'

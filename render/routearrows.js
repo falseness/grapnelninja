@@ -23,11 +23,23 @@ const ROUTE_ARROWS =
     strokePx: [1.6, 2.6],
     alpha: [0.25, 0.95],
     glowPx: 6,
-    // level -> [{id, gap, length, target, t, curve, tangent, box, arc, chevrons}]; the guides never
-    // change after loading. chevrons is {px, list} for the last world-per-screen-pixel factor.
+    // level -> [{id, gap, length, target, t, curve, tangent, box, arc, chevrons}] once all are
+    // computed; the guides never change after loading. chevrons is {px, list} for the last
+    // world-per-screen-pixel factor.
     cache: new WeakMap(),
-    // Levels whose arrows were computed (a cache hit does not count)
+    // level -> lazy state (routeArrowState) while arrows are computed one by one
+    states: new WeakMap(),
+    // Levels whose arrow state was set up (a cache hit does not count)
     builds: 0,
+    // Arrows computed (computeRouteArrow calls)
+    computed: 0,
+    // Run start computes the arrows within this many view sizes of the view; a live draw()
+    // computes the rest, nearest first, for up to budgetMs per frame (at least one)
+    warmScreens: 1,
+    budgetMs: 4,
+    // warm / queued: computed by warmRouteArrows / buildPendingRouteArrows; sameFrame: computed by
+    // a live frame that draws it (ids in sameFrameIds); frozen: likewise in any other draw()
+    stats: {warm: 0, queued: 0, sameFrame: 0, sameFrameIds: [], frozen: 0},
     // Chevron layouts computed (once per arrow and camera zoom)
     layouts: 0,
     // Transfer ids drawn in the last frame (after culling), and their chevron counts
@@ -161,34 +173,151 @@ function routeArrowGap(polysA, polysB)
 // One arrow per guided transfer, computed once per level: its gap, the
 // sub-cubic for [0, t*], the unit tangent at t*, the box of the sub-curve's
 // control points (the curve stays inside their hull) and the sub-curve's
-// chord table for placing chevrons
+// chord table for placing chevrons. Since TASK-890 a level's arrows are
+// computed one at a time (computeRouteArrow) into a per-level state; this
+// computes the ones still missing and returns the complete list (same array
+// every call).
 function routeArrowsFor(level)
 {
-    let arrows = ROUTE_ARROWS.cache.get(level)
+    const arrows = ROUTE_ARROWS.cache.get(level)
     if (arrows)
         return arrows
+    const state = routeArrowState(level)
+    for (let i = 0; i < state.arrows.length; i++)
+        if (!state.arrows[i])
+            computeRouteArrow(state, i)
+    ROUTE_ARROWS.cache.set(level, state.arrows)
+    return state.arrows
+}
+
+// Per-level lazy state: arrows[i] (null until computed) for the i-th guided
+// transfer, and guideBoxes[i], the box of its whole guide's control points.
+// The arrow's sub-curve is a de Casteljau piece of the guide, inside the
+// guide's control hull, so its box (and so its drawn chevrons) lies inside
+// guideBoxes[i]: an arrow whose guide box is off view cannot be on view.
+function routeArrowState(level)
+{
+    let state = ROUTE_ARROWS.states.get(level)
+    if (state)
+        return state
     ROUTE_ARROWS.builds++
-    const elements = new Map((level.elements ?? []).map(e => [e.id, e]))
-    const fragments = new Map((level.svgFormat?.fragments ?? []).map(f => [f.id, f]))
-    const polygons = id => (fragments.get(id)?.elements ?? []).map(eid => elements.get(eid)).filter(e => e)
-        .map(e => e.points.map(p => [e.x + p.x, e.y + p.y]))
-    arrows = []
-    for (const transfer of level.svgFormat?.transfers ?? [])
+    const transfers = (level.svgFormat?.transfers ?? []).filter(t => t.guide)
+    state = {level, transfers, elements: null, fragments: null, pending: transfers.length,
+        arrows: transfers.map(() => null),
+        guideBoxes: transfers.map(t =>
+        {
+            const box = {left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity}
+            for (const [x, y] of t.guide)
+                addPointToBox(box, {x, y})
+            return box
+        })}
+    ROUTE_ARROWS.states.set(level, state)
+    return state
+}
+
+function computeRouteArrow(state, i)
+{
+    const level = state.level
+    if (!state.elements)
     {
-        const p = transfer.guide
-        if (!p)
-            continue
-        const gap = routeArrowGap(polygons(transfer.from), polygons(transfer.to))
-        const {length, target, t} = routeArrowParameter(p, ROUTE_ARROWS.gapFraction * gap)
-        const curve = routeArrowHead(p, t)
-        const box = {left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity}
-        for (const [x, y] of curve)
-            addPointToBox(box, {x, y})
-        arrows.push({id: transfer.id, gap, length, target, t, curve, tangent: routeArrowTangent(p, t), box,
-            arc: routeArrowTable(curve), chevrons: null})
+        state.elements = new Map((level.elements ?? []).map(e => [e.id, e]))
+        state.fragments = new Map((level.svgFormat?.fragments ?? []).map(f => [f.id, f]))
     }
-    ROUTE_ARROWS.cache.set(level, arrows)
-    return arrows
+    const polygons = id => (state.fragments.get(id)?.elements ?? []).map(eid => state.elements.get(eid)).filter(e => e)
+        .map(e => e.points.map(p => [e.x + p.x, e.y + p.y]))
+    const transfer = state.transfers[i], p = transfer.guide
+    const gap = routeArrowGap(polygons(transfer.from), polygons(transfer.to))
+    const {length, target, t} = routeArrowParameter(p, ROUTE_ARROWS.gapFraction * gap)
+    const curve = routeArrowHead(p, t)
+    const box = {left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity}
+    for (const [x, y] of curve)
+        addPointToBox(box, {x, y})
+    state.arrows[i] = {id: transfer.id, gap, length, target, t, curve, tangent: routeArrowTangent(p, t), box,
+        arc: routeArrowTable(curve), chevrons: null}
+    ROUTE_ARROWS.computed++
+    if (--state.pending === 0)
+        ROUTE_ARROWS.cache.set(level, state.arrows)
+    return state.arrows[i]
+}
+
+// Box distance (world units, 0 when they overlap) between a box and a rect
+function routeArrowBoxDistance(box, rect)
+{
+    const dx = Math.max(0, rect.left - box.right, box.left - rect.right)
+    const dy = Math.max(0, rect.top - box.bottom, box.top - rect.bottom)
+    return Math.hypot(dx, dy)
+}
+
+// The view as drawRouteArrows culls it: the cull rect padded by the largest chevron and its glow
+function routeArrowView()
+{
+    const css = getCanvasCssRect().width
+    const px = width / css / scale[version]
+    const pad = (ROUTE_ARROWS.halfSizePx[1] * 2 + ROUTE_ARROWS.glowPx) * px
+    const rect = getCullRect()
+    return {px, css, view: {left: rect.left - pad, top: rect.top - pad, right: rect.right + pad, bottom: rect.bottom + pad}}
+}
+
+// Run start (warmGlowSprites, before the first frame): the arrows whose guide
+// box lies within warmScreens screens of the view. The rest are computed by
+// buildPendingRouteArrows, nearest first.
+function warmRouteArrows(world)
+{
+    if (version !== 'grapple_over' || !world || !world.level || ROUTE_ARROWS.cache.has(world.level))
+        return 0
+    const state = routeArrowState(world.level)
+    const {view} = routeArrowView()
+    const reach = ROUTE_ARROWS.warmScreens * Math.max(view.right - view.left, view.bottom - view.top)
+    let built = 0
+    for (let i = 0; i < state.arrows.length; i++)
+        if (!state.arrows[i] && routeArrowBoxDistance(state.guideBoxes[i], view) <= reach)
+        {
+            computeRouteArrow(state, i)
+            ++built
+        }
+    ROUTE_ARROWS.stats.warm += built
+    return built
+}
+
+function routeArrowsPending()
+{
+    const world = typeof floors != 'undefined' && floors[0]
+    if (!world || !world.level || ROUTE_ARROWS.cache.has(world.level))
+        return false
+    const state = ROUTE_ARROWS.states.get(world.level)
+    return !state || state.pending > 0
+}
+
+// End of a live draw(): missing arrows of the current level, nearest to the
+// view first, until budgetMs of performance.now() time is spent (at least
+// one per call); returns how many were computed
+function buildPendingRouteArrows(budgetMs = ROUTE_ARROWS.budgetMs)
+{
+    if (version !== 'grapple_over' || typeof floors == 'undefined' || !floors[0] || !floors[0].level)
+        return 0
+    const level = floors[0].level
+    if (ROUTE_ARROWS.cache.has(level))
+        return 0
+    const state = routeArrowState(level)
+    if (!state.pending)
+        return 0
+    const {view} = routeArrowView()
+    const order = []
+    for (let i = 0; i < state.arrows.length; i++)
+        if (!state.arrows[i])
+            order.push([routeArrowBoxDistance(state.guideBoxes[i], view), i])
+    order.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    const start = performance.now()
+    let built = 0
+    for (const [, i] of order)
+    {
+        computeRouteArrow(state, i)
+        ++built
+        if (performance.now() - start >= budgetMs)
+            break
+    }
+    ROUTE_ARROWS.stats.queued += built
+    return built
 }
 
 // Chevrons of an arrow for px world units per screen pixel: spaced chevronGapPx
@@ -217,25 +346,27 @@ function routeArrowChevrons(arrow, px)
     return list
 }
 
-// World layer, under the grapnel, the player and the terrain
+// World layer, under the grapnel, the player and the terrain. Draws the
+// computed arrows only; a missing one whose guide box reaches the view is
+// computed here first (stats.sameFrame in a live frame, stats.frozen in any
+// other draw) - the queue is meant to keep sameFrame at 0.
 function drawRouteArrows(world)
 {
     ROUTE_ARROWS.drawn = []
     ROUTE_ARROWS.drawnChevrons = []
     if (version !== 'grapple_over' || !world || !world.level)
         return
-    const arrows = routeArrowsFor(world.level)
+    const level = world.level
+    const state = ROUTE_ARROWS.cache.has(level) ? null : routeArrowState(level)
+    const arrows = state ? state.arrows : ROUTE_ARROWS.cache.get(level)
     if (!arrows.length)
         return
 
-    // World units per screen pixel, as drawAcquisitionCircle
-    const css = getCanvasCssRect().width
-    const px = width / css / scale[version]
+    // World units per screen pixel, as drawAcquisitionCircle.
     // Culled by the curve's own box padded by the largest chevron and its glow, not by its source panel
-    const pad = (ROUTE_ARROWS.halfSizePx[1] * 2 + ROUTE_ARROWS.glowPx) * px
-    const rect = getCullRect()
-    const view = {left: rect.left - pad, top: rect.top - pad, right: rect.right + pad, bottom: rect.bottom + pad}
+    const {px, css, view} = routeArrowView()
     const sx = screen.x, sy = screen.y
+    const live = typeof GLYPH_GLOW_QUEUE != 'undefined' && GLYPH_GLOW_QUEUE.defer
 
     ctx.save()
     ctx.globalCompositeOperation = 'source-over'
@@ -246,8 +377,22 @@ function drawRouteArrows(world)
     ctx.setLineDash([])
     ctx.lineCap = ctx.lineJoin = 'round'
     ctx.strokeStyle = ROUTE_ARROWS.color
-    for (const arrow of arrows)
+    for (let i = 0; i < arrows.length; i++)
     {
+        let arrow = arrows[i]
+        if (!arrow)
+        {
+            if (!isBoxInCullRect(state.guideBoxes[i], view))
+                continue
+            arrow = computeRouteArrow(state, i)
+            if (live)
+            {
+                ROUTE_ARROWS.stats.sameFrame++
+                ROUTE_ARROWS.stats.sameFrameIds.push(arrow.id)
+            }
+            else
+                ROUTE_ARROWS.stats.frozen++
+        }
         if (!isBoxInCullRect(arrow.box, view))
             continue
         const chevrons = routeArrowChevrons(arrow, px)

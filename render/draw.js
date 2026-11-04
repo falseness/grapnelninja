@@ -294,6 +294,7 @@ function drawFpsCounterLayer(gameState)
 // in the game transform, so their glow sprites (render/glowsprites.js) are
 // built here and the first frames do no shadowBlur work. HUD glyph sprites
 // (drawGlowGlyphs) are only queued here: draw() builds them under its budget.
+// Grapple Over route arrows within one view of the camera are computed here.
 function warmGlowSprites()
 {
     if (!warmGlowSprites.ctx)
@@ -325,6 +326,9 @@ function warmGlowSprites()
         ctx = mainCtx
         LAYOUT_PROBE.boxes = boxes
     }
+    // Route arrows near the view (render/routearrows.js); a live draw() computes the rest
+    if (version === 'grapple_over')
+        warmRouteArrows(floors[0])
 }
 
 function draw()
@@ -372,4 +376,7 @@ function draw()
     buildPendingGlyphSprites()
     // Then one deferred background bake (render/glowsprites.js)
     buildPendingBackgroundBakes()
+    // And route arrows not computed yet, nearest to the view first (render/routearrows.js)
+    if (GLYPH_GLOW_QUEUE.defer)
+        buildPendingRouteArrows()
 }

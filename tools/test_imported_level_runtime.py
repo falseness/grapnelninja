@@ -680,7 +680,14 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+                PLATFORM.loadingProgress(50)',
                                    # TASK-861: env:* start events (telemetry only); re-pinned by TASK-879
                                    '+                TELEMETRY.sendEnvironment()',
-                                   '+                await loadGrappleOverLevelAsset()',
+                                   # TASK-890: the canvas size and the tutorial hint sprite are set up while the level script loads
+                                   '+                const levelAsset = loadGrappleOverLevelAsset()',
+                                   '+                // While the level script loads: the canvas size (start() sets',
+                                   "+                // it again, unchanged) and the first-run hint's sprite, so the",
+                                   '+                // first frame only blits it',
+                                   '+                configureCanvasViewport(canvas, ctx)',
+                                   '+                TUTORIAL_HINT.prebuild(canvas, buildBootMode())',
+                                   '+                await levelAsset',
                                    '+                PLATFORM.loadingProgress(90)',
                                    '+                PLATFORM.loadingProgress(100)',
                                    # TASK-854: boot mode from BUILD_CONFIG (grapple_over in the repo build, as before) and startGame refuses
@@ -725,6 +732,16 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+                // A fresh start (first run or restart) launches upward, as',
                                    '+                // does a fall recovery; a continue or save restore does not.',
                                    '+                ninja.speedY = -getSpawnLaunchSpeed()',
+                                   # TASK-888: gameLoop wraps the frame (gameLoopFrame) to flag live frames for the deferred HUD glyph glow (display only); re-pinned by TASK-890
+                                   '+            {',
+                                   '+                // Live frames draw new HUD glyph glow once it is built (render/glowsprites.js)',
+                                   '+                GLYPH_GLOW_QUEUE.defer = true',
+                                   '+                try { gameLoopFrame(frameTime) }',
+                                   '+                finally { GLYPH_GLOW_QUEUE.defer = false }',
+                                   '+                game = requestAnimationFrame(gameLoop)',
+                                   '+            }',
+                                   '+',
+                                   '+            function gameLoopFrame(frameTime)',
                                    '-                TELEMETRY.frame(frameTime, activelyPlaying, version)',
                                    '+                TELEMETRY.frame(frameTime, activelyPlaying, version, floors[0]?.grapnelMode)',
                                    '-                    if (activelyPlaying) TUTORIAL_HINT.advance(steps * physicsStepMs)',
@@ -735,8 +752,12 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+                        FALL_MESSAGE.advance(steps * physicsStepMs)',
                                    '+                    }',
                                    # TASK-721: a step can open the first-death offer's pause screen.
-                                   '+                    // A step can open a pause screen (the first-death offer): keep it on top',
+                                   # TASK-888 added the full stop and the next comment line and the defer flag of the last draw
+                                   '+                    // A step can open a pause screen (the first-death offer): keep it on top.',
+                                   '+                    // The frame frozen under it draws its glyph glow complete.',
+                                   '+                    GLYPH_GLOW_QUEUE.defer = !menu.gamePaused',
                                    '+                    if (menu.gamePaused) menu.drawPauseScreen()',
+                                   '-                game = requestAnimationFrame(gameLoop)',
                                    # TASK-862: ui:lang design event (telemetry only); re-pinned by TASK-879
                                    "+                ANALYTICS.design('ui:lang:' + I18N.language)",
                                    # TASK-856/859: host pause/audio-off mute the game audio (GAME_AUDIO 'host'); no physics; re-pinned by TASK-879

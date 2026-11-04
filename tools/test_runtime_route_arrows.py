@@ -697,6 +697,9 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         if 'ROUTE_ARROWS.t' not in old_js and 't: 0.25' not in old_js:
             old_js = subprocess.run(['git', 'show', '6c7fcc0:render/routearrows.js'], cwd=ROOT, check=True, capture_output=True, text=True).stdout
         self.assertIn('t: 0.25', old_js)
+        # draw.js calls the lazy-arrow hooks added by TASK-890 (run-start warm, per-frame queue)
+        if 'function warmRouteArrows' not in old_js:
+            old_js += '\nfunction warmRouteArrows() { return 0 }\nfunction buildPendingRouteArrows() { return 0 }\n'
         pages = {'guidedDistanceArrows': self.open(self.js), 'noGuides': self.open(self.plain_js),
                  'guidedOldFixedTArrows': self.open(self.js, old_js)}
         for p in pages.values():

@@ -107,6 +107,8 @@ PROFILED_FUNCTIONS = {
     'effects_paint': ('paint', 'effects.js'),
     'buildGrappleOverParallaxTiles': ('buildGrappleOverParallaxTiles', 'parallax.js'),
     'routeArrowsFor': ('routeArrowsFor', 'routearrows.js'),
+    # TASK-890: one arrow (routeArrowsFor, the run-start warm and the per-frame queue call it)
+    'computeRouteArrow': ('computeRouteArrow', 'routearrows.js'),
     'tutorial_hint_build': ('build', 'tutorialhint.js'),
     'palette_strips': ('buildGrappleOverPaletteStrips', 'draw.js'),
 }

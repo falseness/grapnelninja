@@ -279,7 +279,13 @@
                 applyLanguage()
                 TELEMETRY.sendEnvironment()
                 setLoadingProgress(I18N.t('loading.starting'))
-                await loadGrappleOverLevelAsset()
+                const levelAsset = loadGrappleOverLevelAsset()
+                // While the level script loads: the canvas size (start() sets
+                // it again, unchanged) and the first-run hint's sprite, so the
+                // first frame only blits it
+                configureCanvasViewport(canvas, ctx)
+                TUTORIAL_HINT.prebuild(canvas, buildBootMode())
+                await levelAsset
                 PLATFORM.loadingProgress(90)
                 await nextFrame()
                 start()

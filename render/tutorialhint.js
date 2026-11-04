@@ -71,11 +71,11 @@ const TUTORIAL_HINT = {
         }
     },
 
-    cacheKey(canvas)
+    cacheKey(canvas, mode = version)
     {
         const cssWidth = parseFloat(canvas.style.width) || canvas.width
         const dpr = Math.round(canvas.width / cssWidth * 1000) / 1000
-        return [I18N.language, version, isTouchFirstDevice() ? 'touch' : 'mouse',
+        return [I18N.language, mode, isTouchFirstDevice() ? 'touch' : 'mouse',
                 canvas.width + 'x' + canvas.height, dpr].join('|')
     },
 
@@ -84,8 +84,18 @@ const TUTORIAL_HINT = {
         this.spriteKey = ''
     },
 
+    // Boot (TASK-890): builds the sprite for the boot mode while the level
+    // script loads, so the first frame only blits it. Nothing when the key
+    // already matches; a different key at the first draw rebuilds as before
+    prebuild(canvas, mode)
+    {
+        const key = this.cacheKey(canvas, mode)
+        if (key !== this.spriteKey)
+            this.build(canvas, key, mode)
+    },
+
     // Builds the sprite for the canvas's current size, language and input
-    build(canvas, key)
+    build(canvas, key, mode = version)
     {
         if (!this.sprite)
             this.sprite = document.createElement('canvas')
@@ -103,7 +113,7 @@ const TUTORIAL_HINT = {
         const colors = STYLE.colors.tutorial
         const hold = I18N.t(isTouchFirstDevice() ? 'tutorial.hold.touch' : 'tutorial.hold.desktop')
         const grapple = I18N.t('tutorial.grapple')
-        const climb = version === 'grapple_over'
+        const climb = mode === 'grapple_over'
         const objective = climb ? I18N.t('tutorial.climb') : I18N.t('tutorial.right') + '  →'
 
         const vignette = c.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.45)
