@@ -16,6 +16,9 @@ Builds the four zips from HEAD into a temp dir, then per portal:
   build id in BUILD_CONFIG and the manifest; y8 appId/gameId non-empty in
   the y8 zip and absent from every other zip; manifest file list, sizes and
   sha256 match the zip.
+- bake (TASK-891): every zip ships render/routearrows-baked.js (the
+  build-time route arrow table of the revision), its tag right before
+  render/routearrows.js; it is the only zip file that is no committed blob.
 - boot: the zip extracted to a temp dir and served over http, every external
   request blocked (no portal SDK; the itch zip's GameAnalytics SDK is served
   as an empty script so nothing goes to api.gameanalytics.com), boots into a running Grapple Over run
@@ -380,6 +383,24 @@ class BuildReleaseTest(unittest.TestCase):
         if evidence:
             (Path(evidence) / 'boot.json').write_text(json.dumps(report, indent=2) + '\n')
 
+    def test_09_baked_route_arrows(self):
+        """TASK-891: every zip ships the build-time route arrow table, loaded right before render/routearrows.js."""
+        bake = build_release.baked_caches(self.tree)['route_arrows']
+        expected = build_release.baked_route_arrows_js(bake)
+        for portal in PORTALS:
+            with self.subTest(portal=portal):
+                files = self.zips[portal]
+                self.assertEqual(files[build_release.BAKED_ROUTE_ARROWS], expected)
+                html = self.html(portal)
+                self.assertEqual(html.count(build_release.BAKED_ROUTE_ARROWS_TAG), 1)
+                self.assertLess(html.index(build_release.BAKED_ROUTE_ARROWS_TAG), html.index(build_release.ROUTE_ARROWS_TAG))
+                table = json.loads(expected.decode().split('window.ROUTE_ARROWS_BAKED = ', 1)[1])
+                self.assertEqual(table['layoutId'], 'extended-mountain-v22')
+                self.assertGreater(len(table['arrows']), 0)
+                self.assertTrue(all(a is not None for a in table['arrows']))
+                self.assertEqual(self.manifests[portal]['baked'][build_release.BAKED_ROUTE_ARROWS]['arrows'], len(table['arrows']))
+        print(f'PASS every zip: {build_release.BAKED_ROUTE_ARROWS} ({len(bake["arrows"])} arrows) before render/routearrows.js')
+
     def test_08_playgama_old_build_checks(self):
         """The checks of the old tools/build_playgama.py (playgama-start-firefox) that still apply."""
         files = self.zips['playgama']
@@ -389,13 +410,18 @@ class BuildReleaseTest(unittest.TestCase):
         self.assertIn('index.html', files)
         self.assertIn(b'<meta charset="UTF-8">', html[:1024])
         print('PASS playgama: index.html at the zip root, <meta charset="UTF-8"> in its first 1024 bytes')
-        # Every runtime path relative, Latin and case-correct (a committed blob)
+        # Every runtime path relative, Latin and case-correct (a committed blob; TASK-891: or a
+        # build-time bake, whose bytes are the bake of this revision)
         for name, data in files.items():
             self.assertRegex(name, r'^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.[A-Za-z0-9]+$')
+            if name in build_release.GENERATED_FILES:
+                self.assertFalse(self.tree.has(name), name)
+                continue
             self.assertTrue(self.tree.has(name), name)
             if name not in ('index.html', 'buildconfig.js'):
                 self.assertEqual(data, self.tree.read(name), name)
-        print(f'PASS playgama: {len(files)} relative, Latin, case-correct runtime paths = committed blobs at {self.tree.revision}')
+        print(f'PASS playgama: {len(files)} relative, Latin, case-correct runtime paths = committed blobs at {self.tree.revision}'
+              f' (+ generated {list(build_release.GENERATED_FILES)})')
         # The Bridge SDK stays external (the only external reference)
         external = [r for r in parse(html.decode('utf-8')).refs if re.match(r'^(https?:)?//', r)]
         self.assertEqual(external, [SDK_URLS['playgama']])

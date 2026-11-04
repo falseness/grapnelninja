@@ -40,11 +40,45 @@ const ROUTE_ARROWS =
     // warm / queued: computed by warmRouteArrows / buildPendingRouteArrows; sameFrame: computed by
     // a live frame that draws it (ids in sameFrameIds); frozen: likewise in any other draw()
     stats: {warm: 0, queued: 0, sameFrame: 0, sameFrameIds: [], frozen: 0},
+    // Arrows whose gap, length, target and t came from the build-time bake (computeRouteArrow)
+    bakedUsed: 0,
     // Chevron layouts computed (once per arrow and camera zoom)
     layouts: 0,
     // Transfer ids drawn in the last frame (after culling), and their chevron counts
     drawn: [],
     drawnChevrons: []
+}
+
+// Build-time bake (TASK-891). Release zips (tools/build_release.py) ship
+// render/routearrows-baked.js, which sets ROUTE_ARROWS_BAKED to a JSON table
+// {layoutId, arrows: [{id, from, to, guide, gap, length, target, t} or null]}
+// computed by this file in a headless boot of the same commit. The values
+// depend only on the level (world units), never on the screen, DPR or
+// language. computeRouteArrow takes an entry's scalars instead of the gap
+// search and the guide's chord table when the level's layoutId and the
+// transfer's id, ends and guide match; the rest of the arrow (sub-curve,
+// tangent, box, chord table) is derived from t as before, so the arrow is the
+// same object either way. The source tree has no bake and computes everything.
+function routeArrowBakedTable(level, transfers)
+{
+    const baked = typeof window != 'undefined' && window.ROUTE_ARROWS_BAKED
+    if (!baked || baked.layoutId !== level.layoutId || !Array.isArray(baked.arrows) ||
+        baked.arrows.length !== transfers.length)
+        return null
+    return baked.arrows
+}
+
+function routeArrowBakedEntry(state, i)
+{
+    const entry = state.baked && state.baked[i]
+    const transfer = state.transfers[i]
+    if (!entry || entry.id !== transfer.id || entry.from !== transfer.from || entry.to !== transfer.to ||
+        entry.guide.length !== transfer.guide.length)
+        return null
+    for (let k = 0; k < entry.guide.length; k++)
+        if (entry.guide[k][0] !== transfer.guide[k][0] || entry.guide[k][1] !== transfer.guide[k][1])
+            return null
+    return entry
 }
 
 function routeArrowLerp(a, b, t)
@@ -203,6 +237,7 @@ function routeArrowState(level)
     ROUTE_ARROWS.builds++
     const transfers = (level.svgFormat?.transfers ?? []).filter(t => t.guide)
     state = {level, transfers, elements: null, fragments: null, pending: transfers.length,
+        baked: routeArrowBakedTable(level, transfers),
         arrows: transfers.map(() => null),
         guideBoxes: transfers.map(t =>
         {
@@ -218,16 +253,26 @@ function routeArrowState(level)
 function computeRouteArrow(state, i)
 {
     const level = state.level
-    if (!state.elements)
-    {
-        state.elements = new Map((level.elements ?? []).map(e => [e.id, e]))
-        state.fragments = new Map((level.svgFormat?.fragments ?? []).map(f => [f.id, f]))
-    }
-    const polygons = id => (state.fragments.get(id)?.elements ?? []).map(eid => state.elements.get(eid)).filter(e => e)
-        .map(e => e.points.map(p => [e.x + p.x, e.y + p.y]))
     const transfer = state.transfers[i], p = transfer.guide
-    const gap = routeArrowGap(polygons(transfer.from), polygons(transfer.to))
-    const {length, target, t} = routeArrowParameter(p, ROUTE_ARROWS.gapFraction * gap)
+    let gap, length, target, t
+    const entry = routeArrowBakedEntry(state, i)
+    if (entry)
+    {
+        ({gap, length, target, t} = entry)
+        ROUTE_ARROWS.bakedUsed++
+    }
+    else
+    {
+        if (!state.elements)
+        {
+            state.elements = new Map((level.elements ?? []).map(e => [e.id, e]))
+            state.fragments = new Map((level.svgFormat?.fragments ?? []).map(f => [f.id, f]))
+        }
+        const polygons = id => (state.fragments.get(id)?.elements ?? []).map(eid => state.elements.get(eid)).filter(e => e)
+            .map(e => e.points.map(p => [e.x + p.x, e.y + p.y]))
+        gap = routeArrowGap(polygons(transfer.from), polygons(transfer.to));
+        ({length, target, t} = routeArrowParameter(p, ROUTE_ARROWS.gapFraction * gap))
+    }
     const curve = routeArrowHead(p, t)
     const box = {left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity}
     for (const [x, y] of curve)
