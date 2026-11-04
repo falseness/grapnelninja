@@ -22,7 +22,8 @@ records per boot (all ms on the page's performance.now() clock, navigation start
 With --profile, every size gets --runs extra boots under the CDP sampling profiler (100 us, from
 navigation to two frames after run ready; separate from the timing boots so the profiler's overhead
 does not skew the timings) and reports inclusive CPU ms of the boot's lazy cache builders
-(PROFILED_FUNCTIONS, matched by function name and file basename; 0 when never sampled, e.g. once a
+(PROFILED_FUNCTIONS, matched by function name and file basename - a release bundle's frames map back to
+their source file via window.GAME_BUNDLE_FILES, TASK-895; 0 when never sampled, e.g. once a
 cache is baked at build time). Profiling needs Chromium (WebKit sizes skip it). The same functions
 are also reported for the first gameLoop frame alone as first_frame.<name> (TASK-889): the samples
 from the first one whose stack holds gameLoop up to the next (idle) sample - work deferred to later
@@ -48,6 +49,7 @@ from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
+import re
 import statistics
 import subprocess
 import sys
@@ -268,7 +270,25 @@ def timing_boot(browser, url, size, query, errors):
         ctx.close()
 
 
-def aggregate_profile(prof):
+BUNDLE_NAME = re.compile(r'^game-[0-9a-f]+\.js$')
+
+
+def frame_file(f, bundle_table=None):
+    """File basename of a CPU profile callFrame. A release zip runs one bundle (TASK-893): a frame inside
+    game-<sha>.js maps to the basename of its source part via window.GAME_BUNDLE_FILES
+    ([[first line (1-based), source path, sha], ...]), like render/visualsperf.js sourceLine."""
+    name = f['url'].split('?')[0].split('/')[-1]
+    if bundle_table and BUNDLE_NAME.match(name):
+        line, part = f.get('lineNumber', -1) + 1, None
+        for row in bundle_table:
+            if row[0] <= line:
+                part = row
+        if part:
+            return part[1].split('#')[0].split('/')[-1]
+    return name
+
+
+def aggregate_profile(prof, bundle_table=None):
     nodes = {n['id']: n for n in prof['nodes']}
     parent = {}
     for n in prof['nodes']:
@@ -281,7 +301,7 @@ def aggregate_profile(prof):
         seen, i = set(), s
         while i in nodes:
             f = nodes[i]['callFrame']
-            key = wanted.get((f['functionName'], f['url'].split('?')[0].split('/')[-1]))
+            key = wanted.get((f['functionName'], frame_file(f, bundle_table)))
             if key and key not in seen:
                 incl[key] += d
                 seen.add(key)
@@ -294,7 +314,7 @@ def aggregate_profile(prof):
         names, i = [], s
         while i in nodes:
             f = nodes[i]['callFrame']
-            names.append((f['functionName'], f['url'].split('?')[0].split('/')[-1]))
+            names.append((f['functionName'], frame_file(f, bundle_table)))
             i = parent.get(i)
         if not started:
             if not any(n == 'gameLoop' for n, _ in names):
@@ -322,7 +342,8 @@ def profile_boot(browser, url, size, query, errors):
         page.goto(url + 'index.html' + query)
         wait_ready(page)
         prof = cdp.send('Profiler.stop')['profile']
-        result = aggregate_profile(prof)
+        table = page.evaluate('() => Array.isArray(window.GAME_BUNDLE_FILES) ? window.GAME_BUNDLE_FILES : null')
+        result = aggregate_profile(prof, table)
         result['run_ready_ms'] = round(page.evaluate('() => __bootTiming.runReady'), 1)
         return result
     finally:

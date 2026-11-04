@@ -35,6 +35,20 @@ class BootTimingTest(unittest.TestCase):
         self.assertEqual(bt.TIMING_SET, ['desktop-1920x1080@1', 'desktop-1366x768@1',
                                          'desktop-1280x720@2', 'pixel7-landscape'])
 
+    def test_bundle_frames_map_to_source_files(self):
+        # TASK-895: a release zip runs one game-<sha>.js; profile frames map back via GAME_BUNDLE_FILES
+        table = [[2, 'i18n.js', 'a'], [40, 'render/glowsprites.js', 'b'], [90, 'index.html#inline1', 'c']]
+        f = lambda url, line: {'functionName': 'x', 'url': url, 'lineNumber': line}
+        self.assertEqual(bt.frame_file(f('http://h/game-0123abcd4567.js', 50), table), 'glowsprites.js')
+        self.assertEqual(bt.frame_file(f('http://h/game-0123abcd4567.js', 38), table), 'i18n.js')
+        self.assertEqual(bt.frame_file(f('http://h/game-0123abcd4567.js', 95), table), 'index.html')
+        self.assertEqual(bt.frame_file(f('http://h/render/parallax.js?v=1', 3), table), 'parallax.js')
+        self.assertEqual(bt.frame_file(f('http://h/game-0123abcd4567.js', 50), None), 'game-0123abcd4567.js')
+        prof = {'nodes': [{'id': 1, 'callFrame': f('http://h/game-0123abcd4567.js', 60) | {'functionName': 'paint8'},
+                           'children': []}], 'samples': [1, 1], 'timeDeltas': [0, 1000]}
+        self.assertEqual(bt.aggregate_profile(prof, table)['paint8'], 1.0)
+        self.assertEqual(bt.aggregate_profile(prof)['paint8'], 0.0)
+
     def test_one_boot_fields_positive(self):
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / 't.json'

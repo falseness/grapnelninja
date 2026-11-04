@@ -207,6 +207,11 @@ class PlayerAndBloomTests(unittest.TestCase):
                         // Warm resized sprites, then require stable player textures and no
                         // shadowBlur work during ordinary repeated game frames.
                         draw();
+                        // Since TASK-889 the boot leaves one-time background bakes (Grapple Over
+                        // parallax tiles, painted with shadowBlur into their own sprite canvases)
+                        // queued, one built per draw(): finish warming them first (TASK-895).
+                        // Trees before it have no backgroundBakesPending and bake at the boot.
+                        for(let i=0;i<500 && typeof backgroundBakesPending==='function' && backgroundBakesPending();i++)draw();
                         let ops=0,playerOps=0,shadows=0;
                         const levels=visualEffects.playerGlow.levels.map(l=>l.canvas);
                         const proto=CanvasRenderingContext2D.prototype,originals={};

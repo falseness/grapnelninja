@@ -609,6 +609,34 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         changed = lines('index.html')
         # The full index.html diff since BASE_REV; TASK-774 re-pinned it after TASK-745..753 (platform/analytics wiring only).
         self.assertEqual(changed, [
+                                   # TASK-892: the static poster (preload link, #poster CSS, the <div id="poster"> markup; display only); pinned by TASK-895
+                                   '+        <!-- TASK-892: the poster is fetched first, so it is decoded by the first paint -->',
+                                   '+        <link rel="preload" as="image" href="art/poster.webp" fetchpriority="high">',
+                                   '+            /* Static poster (TASK-892): painted with the first HTML, before any',
+                                   '+               script runs; removed right after the first gameLoop frame',
+                                   '+               (removePoster). Never rotated: full window, cover-cropped (contained when portrait), the',
+                                   "+               art's sky colour behind it, input passes through. */",
+                                   '+            #poster',
+                                   '+            {',
+                                   '+                position: fixed;',
+                                   '+                inset: 0;',
+                                   '+                z-index: 1;',
+                                   '+                background-color: #10032c;',
+                                   '+                pointer-events: none;',
+                                   '+            }',
+                                   '+            #poster img',
+                                   '+            {',
+                                   '+                display: block;',
+                                   '+                width: 100%;',
+                                   '+                height: 100%;',
+                                   '+                object-fit: cover;',
+                                   '+            }',
+                                   '+            /* A portrait window would crop the 16:9 art to its middle (the',
+                                   '+               title is lost): the whole poster, on the sky colour */',
+                                   '+            @media (orientation: portrait) { #poster img { object-fit: contain; } }',
+                                   '+                /* Over the (contained) poster: no veil, the text in the sky band below the art */',
+                                   '+                #poster ~ #rotate-prompt { background: transparent; align-items: flex-end; padding-bottom: 12vh; }',
+                                   '+        <div id="poster"><img src="art/poster.webp" alt="" decoding="sync" fetchpriority="high"></div>',
                                    # TASK-854: BUILD_CONFIG (repo default: every mode, so classic/bad boot and play as before); re-pinned by TASK-879
                                    '+        <script src = "buildconfig.js"></script>',
                                    # TASK-745: the platform backend split
@@ -668,6 +696,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+                    ANALYTICS.sessionEnd()',
                                    '+                })',
                                    '+            }',
+                                   # TASK-892: boot()'s catch removes the poster so the retry screen shows; pinned by TASK-895
+                                   '+                        removePoster()',
                                    # TASK-748/750: platform facade calls and the analytics boot
                                    '+                PLATFORM.loadingProgress(0)',
                                    '+                if (!analyticsStarted)',
@@ -738,7 +768,17 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+                GLYPH_GLOW_QUEUE.defer = true',
                                    '+                try { gameLoopFrame(frameTime) }',
                                    '+                finally { GLYPH_GLOW_QUEUE.defer = false }',
+                                   # TASK-892: the poster goes after the first gameLoop frame (display only); pinned by TASK-895
+                                   '+                // The first frame is on the canvas: the poster goes before its paint',
+                                   '+                removePoster()',
                                    '+                game = requestAnimationFrame(gameLoop)',
+                                   '+            }',
+                                   # TASK-892: removePoster() (display only); pinned by TASK-895
+                                   '+            // TASK-892: the static poster of index.html (#poster)',
+                                   '+            function removePoster()',
+                                   '+            {',
+                                   "+                const poster = document.getElementById('poster')",
+                                   '+                if (poster) poster.remove()',
                                    '+            }',
                                    '+',
                                    '+            function gameLoopFrame(frameTime)',
