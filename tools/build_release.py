@@ -42,12 +42,34 @@ branch scripts):
   tree has no bake and computes it at run time. A revision whose
   routearrows.js does not read ROUTE_ARROWS_BAKED (before TASK-891) builds
   without it, as it did then.
-- manifest.json: portal, build id, revision, modes, zip size and sha256,
+- bundle (TASK-893, bundle_scripts): the game's own scripts ship as ONE file,
+  game-<sha256[:12]>.js (one dot: Playgama's path rule), instead of one tag per file: the local <script src>
+  files in index.html order (the build's rewrites and the bake included),
+  each whitespace-minified by the vendored esbuild (tools/vendor/esbuild;
+  --minify-whitespace only: no identifier is renamed and no syntax is
+  rewritten, so the shared globals, render/abswitches.js's window[name]
+  replacements and function names stay), separated by ';' lines.
+  buildconfig.js, gameanalytics.js and the bake go in verbatim
+  (VERBATIM_PARTS). The inline <script>I18N.applyDom()</script> between
+  i18n.js (in <head>) and the body scripts is folded in after i18n.js; the
+  bundle tag takes the place of the last bundled tag (end of <body>, before
+  the inline boot script), and the portal SDK tag (except Playgama's, first
+  in <head>) and the vendored GameAnalytics SDK tag (UNBUNDLED_SCRIPTS) move
+  right before it. Its first line, window.GAME_BUNDLE_FILES, lists [first
+  line, source path, sha256[:16] of the source] per part:
+  render/visualsperf.js maps stack lines back to source files with it, and
+  bundle_parts / stale_parts / replace_part read it for the tests. The
+  source tree keeps separate files; revisions before TASK-893 (no
+  GAME_BUNDLE_FILES in visualsperf.js) build unbundled as they did then.
+  runtime_files(..., bundle=False) is the per-file build before bundling.
+- manifest.json: portal, build id, revision, modes, bundle (path, bytes,
+  gzip bytes, parts), zip size and sha256,
   and the per-file list (path, size, sha256). Credential values never go in
   the manifest or the build output, only into the y8 zip's buildconfig.js
   and the itch and y8 zips' analytics/backends/gameanalytics.js.
 """
 import argparse
+import gzip
 import hashlib
 import io
 import json
@@ -101,6 +123,17 @@ BAKED_ROUTE_ARROWS_TAG = f'<script src = "{BAKED_ROUTE_ARROWS}"></script>'
 GENERATED_FILES = (BAKED_ROUTE_ARROWS,)
 BAKE_TOOL = Path(__file__).resolve().parent / 'release_bake.py'
 _BAKES = {}
+# TASK-893 bundle: the game's own scripts ship as one whitespace-minified file
+BUNDLE_NAME = re.compile(r'^game-[0-9a-f]{12}\.js$')
+# Local scripts that stay separate tags (vendored, already minified)
+UNBUNDLED_SCRIPTS = (GA_SDK,)
+# Parts the build rewrites go in verbatim (their BUILD_CONFIG / GA_KEYS / bake lines stay as written)
+VERBATIM_PARTS = ('buildconfig.js', GA_BACKEND, BAKED_ROUTE_ARROWS)
+BUNDLE_TABLE = 'window.GAME_BUNDLE_FILES = '
+ESBUILD = Path(__file__).resolve().parent / 'vendor' / 'esbuild' / 'esbuild-linux-x64'
+SCRIPT_ELEMENT = re.compile(r'<script\b([^>]*)>(.*?)</script\s*>', re.S | re.I)
+SCRIPT_SRC = re.compile(r'''\bsrc\s*=\s*(["'])(.*?)\1''', re.S | re.I)
+USE_STRICT = re.compile(r'''^\s*(?:(?://[^\n]*\n|/\*.*?\*/)\s*)*['"]use strict['"]''', re.S)
 
 EXCLUDED_DIRS = {'tools', 'tests', 'test', 'artifacts', 'screenshots', 'docs',
                  '.git', '__pycache__', 'node_modules'}
@@ -332,8 +365,8 @@ def bakes_route_arrows(tree):
     return tree.has('render/routearrows.js') and b'ROUTE_ARROWS_BAKED' in tree.read('render/routearrows.js')
 
 
-def runtime_files(tree, portal, y8_ids, ga_keys=('', '')):
-    """{path: bytes} of the portal build."""
+def runtime_files(tree, portal, y8_ids, ga_keys=('', ''), bundle=True):
+    """{path: bytes} of the portal build (bundle=False: the per-script files before bundle_scripts)."""
     html = portal_html(tree.read('index.html').decode('utf-8'), portal)
     baked = bakes_route_arrows(tree)
     if baked:
@@ -356,7 +389,186 @@ def runtime_files(tree, portal, y8_ids, ga_keys=('', '')):
     bad = sorted(p for p in files if refused(p))
     if bad:
         raise ValueError(f'refused paths in the {portal} build: {bad}')
-    return files
+    return bundle_scripts(files) if bundle and bundles_scripts(tree) else files
+
+
+def bundles_scripts(tree):
+    """Revisions from TASK-893 on bundle (their visualsperf.js maps bundle lines); older ones build as before."""
+    return (tree.has('render/visualsperf.js')
+            and b'GAME_BUNDLE_FILES' in tree.read('render/visualsperf.js'))
+
+
+def esbuild_binary():
+    binary = os.environ.get('ESBUILD') or str(ESBUILD)
+    if not os.access(binary, os.X_OK):
+        raise SystemExit(f'no esbuild at {binary} (tools/vendor/esbuild/README.txt; ESBUILD=path overrides)')
+    return binary
+
+
+def minify_whitespace(sources):
+    """[str] -> [str]: esbuild --minify-whitespace of each source (no renaming, no syntax rewrites)."""
+    if not sources:
+        return []
+    work = Path(tempfile.mkdtemp(prefix='release-minify-'))
+    try:
+        names = [f'part{i:03d}.js' for i in range(len(sources))]
+        (work / 'in').mkdir()
+        for name, source in zip(names, sources):
+            (work / 'in' / name).write_text(source, encoding='utf-8')
+        out = subprocess.run([esbuild_binary(), *names, '--minify-whitespace', '--charset=utf8',
+                              '--legal-comments=none', '--log-level=error', '--outdir=../out'],
+                             cwd=work / 'in', stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
+        if out.returncode:
+            raise ValueError('esbuild failed: ' + out.stderr.decode(errors='replace')[-2000:])
+        return [(work / 'out' / name).read_text(encoding='utf-8') for name in names]
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def remove_span(html, start, end, replacement=None):
+    """html without [start, end) - the whole line when the element is alone on it - or with replacement lines there."""
+    line_start = html.rfind('\n', 0, start) + 1
+    line_end = html.find('\n', end)
+    line_end = len(html) if line_end < 0 else line_end
+    alone = not html[line_start:start].strip() and not html[end:line_end].strip()
+    if replacement is None:
+        return html[:line_start] + html[line_end + 1:] if alone else html[:start] + html[end:]
+    indent = html[line_start:start] if alone else ''
+    text = ('\n' + indent).join(replacement)
+    return html[:line_start] + indent + text + html[line_end:] if alone else html[:start] + text + html[end:]
+
+
+def bundle_scripts(files):
+    """files with the game's local <script src> files (and the inline scripts between them) as ONE bundle.
+
+    The bundle is the scripts in index.html order, each whitespace-minified
+    by esbuild (VERBATIM_PARTS as written), separated by ';' lines; its tag
+    takes the place of the last bundled tag. Inline scripts between the first
+    and the last bundled tag are folded in at their place (I18N.applyDom());
+    the other tags there (portal SDK, vendored GameAnalytics SDK) move right
+    before the bundle tag, in their order. Line 1 is
+    window.GAME_BUNDLE_FILES = [[first line, path, sha256[:16] of the source], ...]
+    (render/visualsperf.js maps stack lines back to the source file with it).
+    """
+    html = files['index.html'].decode('utf-8')
+    elements = []
+    for m in SCRIPT_ELEMENT.finditer(html):
+        src = SCRIPT_SRC.search(m.group(1))
+        src = src.group(2).strip() if src else None
+        local = bool(src) and not urlparse(src).scheme and not src.startswith('//')
+        deferred = re.search(r'\b(async|defer|type)\b', m.group(1), re.I)
+        elements.append({'span': m.span(), 'src': src, 'code': m.group(2),
+                         'bundled': local and src not in UNBUNDLED_SCRIPTS and not deferred})
+    indexes = [i for i, e in enumerate(elements) if e['bundled']]
+    if not indexes:
+        raise ValueError('index.html has no local script to bundle')
+    first, last = indexes[0], indexes[-1]
+    parts, moved = [], []
+    for e in elements[first:last + 1]:
+        if e['bundled']:
+            parts.append((e['src'], files[e['src']].decode('utf-8')))
+        elif e['src'] is None:
+            parts.append((f'index.html#inline{len(parts)}', e['code']))
+        else:
+            moved.append(html[e['span'][0]:e['span'][1]])
+    for path, code in parts:
+        if USE_STRICT.match(code):
+            raise ValueError(f'{path} starts with "use strict": it would change the whole bundle')
+    minified = iter(minify_whitespace([code for path, code in parts if path not in VERBATIM_PARTS]))
+    data = assemble_bundle([(path, code if path in VERBATIM_PARTS else next(minified),
+                             sha256(code.encode('utf-8'))[:16]) for path, code in parts])
+    name = f'game-{sha256(data)[:12]}.js'
+    for i in range(len(elements) - 1, -1, -1):
+        e = elements[i]
+        if i == last:
+            html = remove_span(html, *e['span'], moved + [f'<script src = "{name}"></script>'])
+        elif first <= i < last:
+            html = remove_span(html, *e['span'])
+    out = {p: b for p, b in files.items() if p not in {path for path, _ in parts}}
+    out['index.html'] = html.encode('utf-8')
+    out[name] = data
+    return out
+
+
+def assemble_bundle(chunks):
+    """Bundle bytes of [(path, chunk text, source sha16)]: the table line, then each chunk and a ';' line."""
+    table, line, body = [], 2, []
+    for path, chunk, sha in chunks:
+        chunk = chunk.rstrip('\n')
+        table.append([line, path, sha])
+        body.append(chunk + '\n;\n')
+        line += chunk.count('\n') + 2
+    return (BUNDLE_TABLE + json.dumps(table, separators=(',', ':')) + '\n' + ''.join(body)).encode('utf-8')
+
+
+def bundle_path(files):
+    """The bundle's path among a build's files (None before TASK-893)."""
+    names = [p for p in files if BUNDLE_NAME.match(p)]
+    if len(names) > 1:
+        raise ValueError(f'more than one bundle: {names}')
+    return names[0] if names else None
+
+
+def bundle_table(data):
+    """[{line, path, sha16}] of a bundle's GAME_BUNDLE_FILES line."""
+    first = data.decode('utf-8').split('\n', 1)[0]
+    if not first.startswith(BUNDLE_TABLE):
+        raise ValueError('not a game bundle')
+    return [{'line': line, 'path': path, 'sha16': sha} for line, path, sha in json.loads(first[len(BUNDLE_TABLE):])]
+
+
+def bundle_parts(files):
+    """{path: chunk bytes} of the build's bundle in load order (a VERBATIM_PARTS chunk is the
+    rewritten file as written, without its last newline; the others are whitespace-minified)."""
+    name = bundle_path(files)
+    lines = files[name].decode('utf-8').split('\n')
+    table = bundle_table(files[name])
+    parts = {}
+    for i, row in enumerate(table):
+        end = table[i + 1]['line'] - 1 if i + 1 < len(table) else len(lines) - 1
+        parts[row['path']] = '\n'.join(lines[row['line'] - 1:end - 1]).encode('utf-8')
+    return parts
+
+
+def bundle_part(files, path):
+    """bytes of one part of the build's bundle (see bundle_parts)."""
+    parts = bundle_parts(files)
+    if path not in parts:
+        raise KeyError(f'{path} is not in {bundle_path(files)}')
+    return parts[path]
+
+
+def stale_parts(files, read, rewritten=VERBATIM_PARTS):
+    """Bundle parts whose source differs from read(path) (bytes or None); inline and rewritten parts skipped."""
+    stale = []
+    for row in bundle_table(files[bundle_path(files)]):
+        if row['path'].startswith('index.html#') or row['path'] in rewritten:
+            continue
+        data = read(row['path'])
+        if data is None or sha256(data)[:16] != row['sha16']:
+            stale.append(row['path'])
+    return stale
+
+
+def replace_part(files, path, source):
+    """Bundle bytes with part path's chunk replaced by source (str, used verbatim) - for tests."""
+    parts = bundle_parts(files)
+    if path not in parts:
+        raise KeyError(path)
+    table = {row['path']: row['sha16'] for row in bundle_table(files[bundle_path(files)])}
+    return assemble_bundle([(p, source if p == path else chunk.decode('utf-8'),
+                             sha256(source.encode('utf-8'))[:16] if p == path else table[p])
+                            for p, chunk in parts.items()])
+
+
+def bundle_info(files):
+    """Manifest entry of the bundle: path, raw and gzip bytes, its parts."""
+    name = bundle_path(files)
+    if not name:
+        return None
+    data = files[name]
+    return {'path': name, 'bytes': len(data), 'gzip_bytes': len(gzip.compress(data, 9, mtime=0)),
+            'parts': [row['path'] for row in bundle_table(data)]}
 
 
 def archive(files):
@@ -424,6 +636,7 @@ def build(portal, out=DEFAULT_OUT, rev='HEAD', env=None, tree=None):
         'baked': ({BAKED_ROUTE_ARROWS: {'arrows': len(baked_caches(tree)['route_arrows']['arrows']),
                                         'layoutId': baked_caches(tree)['route_arrows']['layoutId']}}
                   if bakes_route_arrows(tree) else {}),
+        'bundle': bundle_info(files),
         'zip': zip_path.name,
         'zip_size': len(data),
         'zip_sha256': sha256(data),

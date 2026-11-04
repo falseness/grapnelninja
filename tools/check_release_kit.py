@@ -24,7 +24,9 @@ texts.ru.md and CHECKLIST.md; the root needs README.md. The check:
   tools/build_release.py build of the revision its manifest.json records
   (Y8 ids and GA keys from the credentials file), and that revision's build
   equals a build of HEAD (the build id in buildconfig.js aside). A failure
-  lists the differing file names (stale_files: rev build vs HEAD build);
+  lists the differing file names (zip_vs_rev_build: zip entries, so a
+  changed script shows as the game-<sha>.js bundle; stale_files: rev build
+  vs HEAD build compared per source file before bundling, TASK-893);
 - playgama_esc: no Playgama text mentions Esc/Escape (Playgama reserves
   Escape for leaving full screen, events.js buildUsesEscape()).
 
@@ -154,7 +156,9 @@ def check_zip(root, portal, env, head_tree, trees):
         y8 = build_release.y8_ids_for(portal, env)
         ga = build_release.ga_keys_for(portal, env)
         built = build_release.runtime_files(tree, portal, y8, ga)
-        head = build_release.runtime_files(head_tree, portal, y8, ga)
+        # rev vs HEAD per source file (TASK-893: the bundle's name and bytes change with the build id)
+        rev_files = build_release.runtime_files(tree, portal, y8, ga, bundle=False)
+        head = build_release.runtime_files(head_tree, portal, y8, ga, bundle=False)
     except (SystemExit, Exception) as exc:  # noqa: BLE001 - report, never crash
         msg = str(exc)
         for v in env.values():
@@ -167,10 +171,10 @@ def check_zip(root, portal, env, head_tree, trees):
     entry['zip_vs_rev_build'] = differing(zip_files(zip_path), built)
     # The build id (commit sha + date) in buildconfig.js differs per revision
     cfg = 'buildconfig.js'
-    if cfg in built:
-        built = dict(built)
-        built[cfg] = built[cfg].replace(tree.build_id().encode(), head_tree.build_id().encode())
-    entry['stale_files'] = differing(built, head)
+    if cfg in rev_files:
+        rev_files = dict(rev_files)
+        rev_files[cfg] = rev_files[cfg].replace(tree.build_id().encode(), head_tree.build_id().encode())
+    entry['stale_files'] = differing(rev_files, head)
     entry['rev_is_head'] = tree.revision == head_tree.revision
     entry['ok'] = not entry['zip_vs_rev_build'] and not entry['stale_files']
     return entry

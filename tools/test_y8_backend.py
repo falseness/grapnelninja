@@ -74,7 +74,7 @@ from test_build_release import y8_env
 from test_go_back import SETUP, CANDIDATES, CATCH, AFTER
 from test_go_back_dialog import START, FALL, HOOKS
 
-from build_release import GENERATED_FILES  # noqa: E402
+from build_release import GENERATED_FILES, BUNDLE_NAME, bundle_parts, bundle_path, stale_parts  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 ZIP = Path(os.environ.get('Y8_ZIP') or ROOT / 'artifacts' / 'release-grapple-over' / 'y8' / 'grapple-over-y8.zip')
@@ -346,26 +346,35 @@ class Y8BackendTests(unittest.TestCase):
     # -- tests -------------------------------------------------------------
 
     def test_00_zip_is_current(self):
+        # TASK-893: the game scripts are one bundle; its parts are checked by their source sha
         stale = [n for n, b in self.files.items()
-                 if n not in REWRITTEN and (not (ROOT / n).is_file() or (ROOT / n).read_bytes() != b)]
+                 if n not in REWRITTEN and not BUNDLE_NAME.match(n)
+                 and (not (ROOT / n).is_file() or (ROOT / n).read_bytes() != b)]
+        stale += stale_parts(self.files, lambda p: (ROOT / p).read_bytes() if (ROOT / p).is_file() else None)
+        parts = bundle_parts(self.files)
+        bundle_tag = '<script src = "%s"></script>' % bundle_path(self.files)
         self.assertEqual(stale, [], 'zip is stale: rebuild with tools/build_release.py --portal y8')
         html = self.files['index.html'].decode()
-        self.assertEqual(html.count('platform/backends/'), 2)
+        self.assertEqual([n for n in parts if n.startswith('platform/backends/')],
+                         ['platform/backends/local.js', 'platform/backends/y8.js'])
+        self.assertEqual(html.count('platform/backends/'), 0)
         self.assertEqual(html.count(SDK_URL), 1)
-        sdk_at, backend_at = html.index(SDK_TAG), html.index(BACKEND_TAG)
-        self.assertLess(sdk_at, backend_at)
-        self.assertEqual(html[sdk_at + len(SDK_TAG):backend_at].strip(), '')
+        # the SDK tag, then the vendored GameAnalytics SDK, then the bundle (TASK-893)
+        ga_tag = '<script src = "analytics/vendor/GameAnalytics.min.js"></script>'
+        sdk_at, ga_at, bundle_at = html.index(SDK_TAG), html.index(ga_tag), html.index(bundle_tag)
+        self.assertLess(sdk_at, ga_at)
+        self.assertEqual(html[sdk_at + len(SDK_TAG):ga_at].strip(), '')
+        self.assertEqual(html[ga_at + len(ga_tag):bundle_at].strip(), '')
         # Y8 ships the GameAnalytics backend (keys injected; the SDK is stubbed in these tests)
-        self.assertIn('<script src = "analytics/vendor/GameAnalytics.min.js"></script>', html)
-        self.assertIn('<script src = "analytics/backends/gameanalytics.js"></script>', html)
-        self.assertNotIn('analytics/backends/none.js', html)
-        config = self.files['buildconfig.js'].decode()
+        self.assertIn('analytics/backends/gameanalytics.js', parts)
+        self.assertNotIn('analytics/backends/none.js', parts)
+        config = parts['buildconfig.js'].decode()
         self.assertIn("platform: 'y8'", config)
         self.assertIn("modes: ['grapple_over']", config)
         ids = re.search(r"y8: \{appId: '([^']*)', gameId: '([^']*)'\}", config)
         self.assertTrue(ids and ids.groups() == (self.env['Y8_APP_ID'], self.env['Y8_GAME_ID']),
                         'buildconfig.js y8 ids differ from Y8_APP_ID / Y8_GAME_ID')
-        source = self.files['platform/backends/y8.js'].decode()
+        source = parts['platform/backends/y8.js'].decode()
         code = '\n'.join(l for l in source.splitlines() if not l.strip().startswith('//'))
         self.assertNotIn('LOCAL_PLATFORM_BACKEND', code)
         self.assertNotIn('base.', code)

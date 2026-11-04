@@ -139,13 +139,17 @@ class CheckReleaseKitTest(unittest.TestCase):
     def test_zip_not_built_from_its_revision_fails(self):
         path = os.path.join(self.root, 'gamepix', 'grapple-over-gamepix.zip')
         files = kit.zip_files(path)
-        files['menu.js'] += b'// edited after the build\n'
+        bundle = build_release.bundle_path(files)
+        menu = build_release.bundle_part(files, 'menu.js').decode() + '// edited after the build'
+        files[bundle] = build_release.replace_part(files, 'menu.js', menu)
         with open(path, 'wb') as f:
             f.write(build_release.archive(files))
         r = self.run_check()
         z = {e['portal']: e for e in r['zips']}['gamepix']
         self.assertFalse(z['ok'])
-        self.assertEqual(z['zip_vs_rev_build'], ['menu.js'])
+        # the scripts are one bundle (TASK-893): the edited menu.js shows as it
+        self.assertEqual(z['zip_vs_rev_build'], [bundle])
+        self.assertEqual(z['stale_files'], [])
         self.assertFalse(r['all_ok'])
 
     def test_missing_y8_ids_fail_without_crash(self):

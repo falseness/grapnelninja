@@ -329,7 +329,12 @@ class BuiltZipTitleTests(unittest.TestCase):
             path = self.out / portal / f'grapple-over-{portal}.zip'
             data = path.read_bytes()
             with zipfile.ZipFile(path) as z:
-                i18n_count = z.read('i18n.js').decode('utf-8').count('Grapnel Ninja')
+                names = z.namelist()
+                if 'i18n.js' in names:
+                    i18n_count = z.read('i18n.js').decode('utf-8').count('Grapnel Ninja')
+                else:  # TASK-893: i18n.js is a part of the one game bundle
+                    import build_release
+                    i18n_count = build_release.bundle_part({n: z.read(n) for n in names}, 'i18n.js').decode('utf-8').count('Grapnel Ninja')
             site = Path(tempfile.mkdtemp(prefix=f'i18n-{portal}-'))
             self.addCleanup(shutil.rmtree, site, True)
             with zipfile.ZipFile(path) as z:

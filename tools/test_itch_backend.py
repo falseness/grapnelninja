@@ -49,7 +49,7 @@ from game_harness import READY
 from test_go_back import SETUP, CANDIDATES, CATCH, AFTER
 from test_go_back_dialog import START, FALL, HOOKS
 
-from build_release import GENERATED_FILES  # noqa: E402
+from build_release import GENERATED_FILES, BUNDLE_NAME, bundle_parts, bundle_path, stale_parts  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 ZIP = Path(os.environ.get('ITCH_ZIP') or
@@ -197,17 +197,24 @@ class ItchBackendTests(unittest.TestCase):
     # -- tests -------------------------------------------------------------
 
     def test_00_zip_is_current(self):
+        # TASK-893: the game scripts are one bundle; its parts are checked by their source sha
         stale = [n for n, b in self.files.items()
-                 if n not in REWRITTEN and (not (ROOT / n).is_file() or (ROOT / n).read_bytes() != b)]
+                 if n not in REWRITTEN and not BUNDLE_NAME.match(n)
+                 and (not (ROOT / n).is_file() or (ROOT / n).read_bytes() != b)]
+        stale += stale_parts(self.files, lambda p: (ROOT / p).read_bytes() if (ROOT / p).is_file() else None)
+        parts = bundle_parts(self.files)
+        bundle_tag = '<script src = "%s"></script>' % bundle_path(self.files)
         self.assertEqual(stale, [], 'zip is stale: rebuild with tools/build_release.py --portal itch')
         html = self.files['index.html'].decode()
-        self.assertEqual(html.count('platform/backends/'), 2)
-        self.assertIn('<script src = "platform/backends/itch.js"></script>', html)
+        self.assertEqual([n for n in parts if n.startswith('platform/backends/')],
+                         ['platform/backends/local.js', 'platform/backends/itch.js'])
+        self.assertEqual(html.count('platform/backends/'), 0)
+        self.assertIn(bundle_tag, html)
         self.assertNotIn('<script src="http', html)
-        config = self.files['buildconfig.js'].decode()
+        config = parts['buildconfig.js'].decode()
         self.assertIn("platform: 'itch'", config)
         self.assertIn("modes: ['grapple_over']", config)
-        source = self.files['platform/backends/itch.js'].decode()
+        source = parts['platform/backends/itch.js'].decode()
         code = '\n'.join(l for l in source.splitlines() if not l.strip().startswith('//'))
         self.assertNotIn('LOCAL_PLATFORM_BACKEND', code)
         self.assertNotIn('base.', code)

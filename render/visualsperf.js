@@ -210,14 +210,32 @@
     // Mote glow and copy of the reduced backdrop (render/backdrop.js)
     timed(BACKDROP, 'end', ms => addLayer('backdrop', ms))
 
+    // A release zip runs one bundle (tools/build_release.py, TASK-893): its first
+    // line, window.GAME_BUNDLE_FILES, is [[first line, source path, sha], ...].
+    // [path, line in that part] of a bundle line; [file, line] elsewhere.
+    function sourceLine(file, line)
+    {
+        const table = window.GAME_BUNDLE_FILES
+        if (!Array.isArray(table) || !/(^|\/)game-[0-9a-f]+\.js$/.test(file))
+            return [file, line]
+        let part = null
+        for (const row of table)
+            if (row[0] <= line)
+                part = row
+        return part ? [part[1], line - part[0] + 1] : [file, line]
+    }
+
     // 'file:line' of the first stack frame outside this file
     function creatorOf(stack)
     {
         for (const line of String(stack || '').split('\n').slice(1))
         {
             const m = line.match(/(?:https?:\/\/[^/]+\/)?([^\s()]+):(\d+):\d+\)?\s*$/)
-            if (m && !m[1].endsWith('visualsperf.js'))
-                return m[1] + ':' + m[2]
+            if (!m)
+                continue
+            const [file, at] = sourceLine(m[1], Number(m[2]))
+            if (!file.endsWith('visualsperf.js'))
+                return file + ':' + at
         }
         return '?'
     }

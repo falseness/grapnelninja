@@ -17,8 +17,18 @@ Builds the four zips from HEAD into a temp dir, then per portal:
   the y8 zip and absent from every other zip; manifest file list, sizes and
   sha256 match the zip.
 - bake (TASK-891): every zip ships render/routearrows-baked.js (the
-  build-time route arrow table of the revision), its tag right before
-  render/routearrows.js; it is the only zip file that is no committed blob.
+  build-time route arrow table of the revision), loaded right before
+  render/routearrows.js (a bundle part since TASK-893).
+- bundle (TASK-893): index.html loads exactly one local game script, the
+  bundle game-<sha12>.js, plus the portal SDK and the vendored GameAnalytics
+  SDK; its parts are the unbundled build's scripts in their tag order (the
+  inline I18N.applyDom() folded in after i18n.js), each part's source sha
+  in the bundle table is the unbundled file's, and the bundle is
+  bundle_scripts() of the unbundled build. The bundle is the only zip file
+  besides index.html that is no committed blob.
+  The static checks below read the platform/analytics script order and
+  buildconfig.js / gameanalytics.js from the bundle parts
+  (build_release.bundle_parts).
 - boot: the zip extracted to a temp dir and served over http, every external
   request blocked (no portal SDK; the itch zip's GameAnalytics SDK is served
   as an empty script so nothing goes to api.gameanalytics.com), boots into a running Grapple Over run
@@ -183,7 +193,8 @@ class BuildReleaseTest(unittest.TestCase):
         for portal in PORTALS:
             with self.subTest(portal=portal):
                 scripts = parse(self.html(portal)).scripts
-                srcs = [s for s, _ in scripts]
+                tags = [s for s, _ in scripts]
+                srcs = list(build_release.bundle_parts(self.zips[portal]))
                 backends = [BACKEND.match(s).group(1) for s in srcs if BACKEND.match(s)]
                 portal_backends = [b for b in backends if b != 'local']
                 self.assertEqual(portal_backends, [portal])
@@ -203,20 +214,22 @@ class BuildReleaseTest(unittest.TestCase):
                     self.assertEqual(external, [])
                 else:
                     self.assertEqual([s for s, _ in external], [SDK_URLS[portal]])
+                    self.assertEqual(srcs[i_backend - 1], 'platform/backends/local.js')
                     if portal in build_release.SDK_FIRST_IN_HEAD:
-                        self.assertEqual(srcs[0], SDK_URLS[portal])
-                        self.assertEqual(srcs[i_backend - 1], 'platform/backends/local.js')
+                        self.assertEqual(tags[0], SDK_URLS[portal])
                     else:
-                        self.assertEqual(srcs[i_backend - 1], SDK_URLS[portal])
+                        # the SDK tag moved from after local.js to before the bundle (TASK-893)
+                        self.assertLess(tags.index(SDK_URLS[portal]), tags.index(build_release.bundle_path(self.zips[portal])))
                     self.assertEqual(external[0][1], portal == 'y8')  # only Y8's tag is async
                 analytics = build_release.ANALYTICS_BACKENDS[portal]
                 self.assertIn(analytics, srcs)
-                self.assertEqual([s for s in srcs if s.startswith('analytics/')],
-                                 [build_release.GA_SDK, analytics] if portal in build_release.GA_PORTALS else [analytics])
+                self.assertEqual([s for s in srcs if s.startswith('analytics/')], [analytics])
+                self.assertEqual(build_release.GA_SDK in tags, portal in build_release.GA_PORTALS)
                 self.assertEqual(srcs[srcs.index(analytics) + 1], 'analytics.js')
-                self.assertIn(f'platform/backends/{portal}.js', self.zips[portal])
+                self.assertIn(f'platform/backends/{portal}.js', srcs)
                 for other in PORTALS:
                     if other != portal:
+                        self.assertNotIn(f'platform/backends/{other}.js', srcs)
                         self.assertNotIn(f'platform/backends/{other}.js', self.zips[portal])
 
     def test_02b_playgama_bridge_first_script_in_head(self):
@@ -226,19 +239,20 @@ class BuildReleaseTest(unittest.TestCase):
         self.assertTrue(p.head_scripts, 'no <script> in <head>')
         self.assertEqual(p.head_scripts[0], (SDK_URLS['playgama'], False, False))
         self.assertEqual(sum(1 for s in parse(self.html('playgama')).scripts if s[0] == SDK_URLS['playgama']), 1)
-        self.assertEqual(p.head_scripts[1][0], 'i18n.js')
-        print('PASS playgama: first <head> script is ' + SDK_URLS['playgama'] + ' (no async, no defer), then i18n.js')
+        # TASK-893: i18n.js is the bundle's first part (the bundle loads at the end of <body>)
+        self.assertEqual(len(p.head_scripts), 1, p.head_scripts)
+        print('PASS playgama: first (and only) <head> script is ' + SDK_URLS['playgama'] + ' (no async, no defer)')
         for portal in PORTALS:
-            if portal == 'playgama':
-                continue
             q = HeadScripts()
             q.feed(self.html(portal))
-            self.assertEqual(q.head_scripts[0][0], 'i18n.js', portal)
+            self.assertEqual(q.head_scripts, [(SDK_URLS[portal], False, False)] if portal == 'playgama' else [], portal)
+            self.assertEqual(list(build_release.bundle_parts(self.zips[portal]))[:2], ['i18n.js', 'index.html#inline1'])
 
     def test_03_buildconfig(self):
         for portal in PORTALS:
             with self.subTest(portal=portal):
-                config = build_config(self.zips[portal]['buildconfig.js'].decode('utf-8'))
+                cfg = build_release.bundle_part(self.zips[portal], 'buildconfig.js').decode('utf-8')
+                config = build_config(cfg)
                 self.assertEqual(config['platform'], portal)
                 self.assertEqual(config['modes'], EXPECTED_MODES[portal])
                 self.assertEqual(config['build'], self.tree.build_id())
@@ -256,7 +270,8 @@ class BuildReleaseTest(unittest.TestCase):
                 # the rest of buildconfig.js is the repo file
                 repo = self.tree.read('buildconfig.js').decode('utf-8')
                 strip = lambda s: re.sub(r'^const BUILD_CONFIG = .*$', '', s, flags=re.M)
-                self.assertEqual(strip(self.zips[portal]['buildconfig.js'].decode('utf-8')), strip(repo))
+                self.assertEqual(strip(cfg), strip(repo).rstrip('\n'))
+                self.assertNotIn('buildconfig.js', self.zips[portal])
 
     def test_04_y8_ids_only_in_y8_zip(self):
         secrets = [self.env['Y8_APP_ID'].encode(), self.env['Y8_GAME_ID'].encode()]
@@ -268,7 +283,7 @@ class BuildReleaseTest(unittest.TestCase):
                 with self.subTest(portal=portal, id=('appId', 'gameId')[i]):
                     self.assertFalse(secret in manifest, 'y8 id in a manifest')
                     if portal == 'y8':
-                        self.assertTrue(secret in self.zips['y8']['buildconfig.js'], 'y8 id missing')
+                        self.assertTrue(secret in build_release.bundle_part(self.zips['y8'], 'buildconfig.js'), 'y8 id missing')
                     else:
                         self.assertFalse(secret in joined, f'y8 id found in the {portal} zip')
                         self.assertFalse(secret in zip_bytes, f'y8 id found in the {portal} zip bytes')
@@ -283,7 +298,7 @@ class BuildReleaseTest(unittest.TestCase):
                 with self.subTest(portal=portal, key=('GA_GAME_KEY', 'GA_SECRET_KEY')[i]):
                     self.assertFalse(secret in manifest, 'GA key in a manifest')
                     if portal in build_release.GA_PORTALS:
-                        self.assertTrue(secret in self.zips[portal][build_release.GA_BACKEND], 'GA key missing')
+                        self.assertTrue(secret in build_release.bundle_part(self.zips[portal], build_release.GA_BACKEND), 'GA key missing')
                         self.assertEqual(joined.count(secret), 1, 'GA key outside gameanalytics.js')
                     else:
                         self.assertFalse(secret in joined, f'GA key found in the {portal} zip')
@@ -390,16 +405,44 @@ class BuildReleaseTest(unittest.TestCase):
         for portal in PORTALS:
             with self.subTest(portal=portal):
                 files = self.zips[portal]
-                self.assertEqual(files[build_release.BAKED_ROUTE_ARROWS], expected)
-                html = self.html(portal)
-                self.assertEqual(html.count(build_release.BAKED_ROUTE_ARROWS_TAG), 1)
-                self.assertLess(html.index(build_release.BAKED_ROUTE_ARROWS_TAG), html.index(build_release.ROUTE_ARROWS_TAG))
+                self.assertNotIn(build_release.BAKED_ROUTE_ARROWS, files)
+                self.assertEqual(build_release.bundle_part(files, build_release.BAKED_ROUTE_ARROWS), expected.rstrip(b'\n'))
+                parts = list(build_release.bundle_parts(files))
+                self.assertEqual(parts.index(build_release.BAKED_ROUTE_ARROWS) + 1, parts.index('render/routearrows.js'))
                 table = json.loads(expected.decode().split('window.ROUTE_ARROWS_BAKED = ', 1)[1])
                 self.assertEqual(table['layoutId'], 'extended-mountain-v22')
                 self.assertGreater(len(table['arrows']), 0)
                 self.assertTrue(all(a is not None for a in table['arrows']))
                 self.assertEqual(self.manifests[portal]['baked'][build_release.BAKED_ROUTE_ARROWS]['arrows'], len(table['arrows']))
         print(f'PASS every zip: {build_release.BAKED_ROUTE_ARROWS} ({len(bake["arrows"])} arrows) before render/routearrows.js')
+
+    def test_10_one_game_bundle(self):
+        """TASK-893: one local game script (the bundle) + SDK/vendor tags; the bundle is the unbundled build's scripts."""
+        for portal in PORTALS:
+            with self.subTest(portal=portal):
+                files = self.zips[portal]
+                name = build_release.bundle_path(files)
+                self.assertRegex(name or '', build_release.BUNDLE_NAME)
+                self.assertEqual(name, f'game-{build_release.sha256(files[name])[:12]}.js')
+                srcs = [s for s, _ in parse(self.html(portal)).scripts]
+                local = [s for s in srcs if not re.match(r'^(https?:)?//', s)]
+                expected = ([build_release.GA_SDK] if portal in build_release.GA_PORTALS else []) + [name]
+                self.assertEqual(local, expected)
+                self.assertEqual([s for s in srcs if re.match(r'^(https?:)?//', s)],
+                                 [SDK_URLS[portal]] if SDK_URLS[portal] else [])
+                self.assertEqual(self.html(portal).count('<script'), len(srcs) + 1)  # + the inline boot script
+                plain = build_release.runtime_files(self.tree, portal, build_release.y8_ids_for(portal, self.env),
+                                                    build_release.ga_keys_for(portal, self.env), bundle=False)
+                plain_scripts = [s for s in [s for s, _ in parse(plain['index.html'].decode()).scripts]
+                                 if not re.match(r'^(https?:)?//', s) and s != build_release.GA_SDK]
+                parts = list(build_release.bundle_parts(files))
+                self.assertEqual([p for p in parts if not p.startswith('index.html#')], plain_scripts)
+                self.assertEqual(build_release.stale_parts(files, lambda p: plain.get(p), rewritten=()), [])
+                self.assertEqual(build_release.bundle_scripts(plain), files)
+                self.assertFalse([p for p in files if p.endswith('.js') and p not in (name, 'leveldata.js', build_release.GA_SDK)])
+                self.assertEqual(self.manifests[portal]['bundle']['path'], name)
+                self.assertEqual(self.manifests[portal]['bundle']['parts'], parts)
+                print(f'PASS {portal}: one game bundle {name} ({len(parts)} parts, {len(files[name])} bytes), script tags {srcs}')
 
     def test_08_playgama_old_build_checks(self):
         """The checks of the old tools/build_playgama.py (playgama-start-firefox) that still apply."""
@@ -414,14 +457,15 @@ class BuildReleaseTest(unittest.TestCase):
         # build-time bake, whose bytes are the bake of this revision)
         for name, data in files.items():
             self.assertRegex(name, r'^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.[A-Za-z0-9]+$')
-            if name in build_release.GENERATED_FILES:
+            if name in build_release.GENERATED_FILES or build_release.BUNDLE_NAME.match(name):
                 self.assertFalse(self.tree.has(name), name)
                 continue
             self.assertTrue(self.tree.has(name), name)
-            if name not in ('index.html', 'buildconfig.js'):
+            if name != 'index.html':
                 self.assertEqual(data, self.tree.read(name), name)
+        self.assertEqual(build_release.stale_parts(files, lambda p: self.tree.read(p) if self.tree.has(p) else None), [])
         print(f'PASS playgama: {len(files)} relative, Latin, case-correct runtime paths = committed blobs at {self.tree.revision}'
-              f' (+ generated {list(build_release.GENERATED_FILES)})')
+              f' (+ the bundle {build_release.bundle_path(files)}, whose parts are committed blobs or build rewrites)')
         # The Bridge SDK stays external (the only external reference)
         external = [r for r in parse(html.decode('utf-8')).refs if re.match(r'^(https?:)?//', r)]
         self.assertEqual(external, [SDK_URLS['playgama']])
@@ -437,9 +481,9 @@ class BuildReleaseTest(unittest.TestCase):
             with zipfile.ZipFile(baseline) as z:
                 self.assertEqual(config, json.loads(z.read('playgama-bridge-config.json')))
             print('PASS playgama: playgama-bridge-config.json at the root, equal to the release-20261014 one')
-        self.assertIn("configFilePath: CONFIG_FILE", files['platform/backends/playgama.js'].decode())
+        self.assertIn('configFilePath:CONFIG_FILE', build_release.bundle_part(files, 'platform/backends/playgama.js').decode())
         # Every mode, no external analytics, size limit
-        self.assertEqual(build_config(files['buildconfig.js'].decode('utf-8'))['modes'], ['grapple_over', 'bad', 'classic'])
+        self.assertEqual(build_config(build_release.bundle_part(files, 'buildconfig.js').decode('utf-8'))['modes'], ['grapple_over', 'bad', 'classic'])
         print('PASS playgama: modes grapple_over, bad, classic (boot starts Grapple Over)')
         # Code only: the backends' comments name the GameAnalytics ban
         code = lambda d: '\n'.join(l for l in d.decode('utf-8').splitlines() if not l.strip().startswith('//'))

@@ -64,7 +64,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import start_browser_test
 from game_harness import READY, LOCAL_BRIDGE
 
-from build_release import GENERATED_FILES  # noqa: E402
+from build_release import GENERATED_FILES, BUNDLE_NAME, bundle_parts, bundle_path, stale_parts  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 ZIP = Path(os.environ.get('PLAYGAMA_ZIP') or
@@ -352,29 +352,36 @@ class PlaygamaBackendTests(unittest.TestCase):
     # -- tests -------------------------------------------------------------
 
     def test_00_zip_is_current(self):
+        # TASK-893: the game scripts are one bundle; its parts are checked by their source sha
         stale = [n for n, b in self.files.items()
-                 if n not in REWRITTEN and (not (ROOT / n).is_file() or (ROOT / n).read_bytes() != b)]
+                 if n not in REWRITTEN and not BUNDLE_NAME.match(n)
+                 and (not (ROOT / n).is_file() or (ROOT / n).read_bytes() != b)]
+        stale += stale_parts(self.files, lambda p: (ROOT / p).read_bytes() if (ROOT / p).is_file() else None)
+        parts = bundle_parts(self.files)
+        bundle_tag = '<script src = "%s"></script>' % bundle_path(self.files)
         self.assertEqual(stale, [], 'zip is stale: rebuild with tools/build_release.py --portal playgama')
         html = self.files['index.html'].decode()
-        self.assertEqual(html.count('platform/backends/'), 2)
+        self.assertEqual([n for n in parts if n.startswith('platform/backends/')],
+                         ['platform/backends/local.js', 'platform/backends/playgama.js'])
+        self.assertEqual(html.count('platform/backends/'), 0)
         self.assertEqual(html.count(SDK_URL), 1)
         # the SDK tag is the first script of <head> (Bridge required step 2,
         # Playgama 1.1.2); the backend follows local.js
-        sdk_at, backend_at = html.index(SDK_TAG), html.index(BACKEND_TAG)
+        sdk_at = html.index(SDK_TAG)
         self.assertLess(sdk_at, html.index('</head>'))
         self.assertEqual(sdk_at, html.index('<script'))
-        local_tag = '<script src = "platform/backends/local.js"></script>'
-        self.assertEqual(html[html.index(local_tag) + len(local_tag):backend_at].strip(), '')
-        self.assertIn('analytics/backends/none.js', html)
+        names = list(parts)
+        self.assertEqual(names.index('platform/backends/playgama.js'), names.index('platform/backends/local.js') + 1)
+        self.assertIn('analytics/backends/none.js', parts)
         self.assertNotIn('gameanalytics', html.lower())
-        config = self.files['buildconfig.js'].decode()
+        config = parts['buildconfig.js'].decode()
         self.assertIn("platform: 'playgama'", config)
         self.assertIn("modes: ['grapple_over', 'bad', 'classic']", config)
         self.assertIn('playgama-bridge-config.json', self.files)
         bridge_config = json.loads(self.files['playgama-bridge-config.json'])
         with zipfile.ZipFile(BASELINE_ZIP) as z:
             self.assertEqual(bridge_config, json.loads(z.read('playgama-bridge-config.json')))
-        source = self.files['platform/backends/playgama.js'].decode()
+        source = parts['platform/backends/playgama.js'].decode()
         code = '\n'.join(l for l in source.splitlines() if not l.strip().startswith('//'))
         self.assertNotIn('LOCAL_PLATFORM_BACKEND', code)
         self.assertNotIn('base.', code)

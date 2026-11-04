@@ -175,8 +175,11 @@ class GameAnalyticsBackendTest(unittest.TestCase):
             return route.fulfill(content_type='application/javascript', body=MOCK_SDK)
         context.route(self.url + SDK_PATH, vendor)
         if backend is not None:
-            context.route(self.url + build_release.GA_BACKEND,
-                          lambda r: r.fulfill(content_type='application/javascript', body=backend))
+            # TASK-893: gameanalytics.js is a bundle part; serve the bundle with that part replaced
+            itch = self.zips['itch']
+            bundle = build_release.replace_part(itch, build_release.GA_BACKEND, backend)
+            context.route(self.url + build_release.bundle_path(itch),
+                          lambda r: r.fulfill(content_type='application/javascript', body=bundle))
         page = context.new_page()
         errors = collect_errors(page)
         page.goto(self.url + 'index.html')
@@ -200,14 +203,18 @@ class GameAnalyticsBackendTest(unittest.TestCase):
     def test_01_static_itch_zip_and_others(self):
         itch = self.zips['itch']
         html = itch['index.html'].decode('utf-8')
-        srcs = re.findall(r'<script src\s*=\s*"([^"]+)"', html)
-        i = srcs.index(SDK_PATH)
-        self.assertEqual(srcs[i:i + 3], [SDK_PATH, build_release.GA_BACKEND, 'analytics.js'])
+        tags = re.findall(r'<script src\s*=\s*"([^"]+)"', html)
+        # TASK-893: the vendored SDK tag sits right before the one game bundle, whose parts
+        # have gameanalytics.js right before analytics.js
+        self.assertEqual(tags[tags.index(SDK_PATH) + 1], build_release.bundle_path(itch))
+        srcs = list(build_release.bundle_parts(itch))
+        i = srcs.index(build_release.GA_BACKEND)
+        self.assertEqual(srcs[i:i + 2], [build_release.GA_BACKEND, 'analytics.js'])
         self.assertNotIn('analytics/backends/none.js', srcs)
         self.assertEqual(itch[SDK_PATH], self.tree.read(SDK_PATH))
         self.assertEqual(itch[SDK_PATH], (ROOT / SDK_PATH).read_bytes())
         self.assertIn(b'MIT License', itch[build_release.GA_LICENSE])
-        backend = itch[build_release.GA_BACKEND].decode('utf-8')
+        backend = build_release.bundle_part(itch, build_release.GA_BACKEND).decode('utf-8') + '\n'
         repo_backend = self.tree.read(build_release.GA_BACKEND).decode('utf-8')
         self.assertIn("var GA_KEYS = {gameKey: '', secretKey: ''}", repo_backend)
         expected = repo_backend.replace(
@@ -218,19 +225,23 @@ class GameAnalyticsBackendTest(unittest.TestCase):
         self.assertIn('<script src = "analytics/backends/none.js"></script>', dev)
         self.assertNotIn('gameanalytics', dev.lower())
         y8 = self.zips['y8']
-        y8_srcs = re.findall(r'<script src\s*=\s*"([^"]+)"', y8['index.html'].decode('utf-8'))
-        j = y8_srcs.index(SDK_PATH)
-        self.assertEqual(y8_srcs[j:j + 3], [SDK_PATH, build_release.GA_BACKEND, 'analytics.js'])
+        y8_tags = re.findall(r'<script src\s*=\s*"([^"]+)"', y8['index.html'].decode('utf-8'))
+        self.assertEqual(y8_tags[y8_tags.index(SDK_PATH) + 1], build_release.bundle_path(y8))
+        y8_srcs = list(build_release.bundle_parts(y8))
+        j = y8_srcs.index(build_release.GA_BACKEND)
+        self.assertEqual(y8_srcs[j:j + 2], [build_release.GA_BACKEND, 'analytics.js'])
         self.assertEqual(y8[SDK_PATH], itch[SDK_PATH])
-        self.assertTrue(y8[build_release.GA_BACKEND] == itch[build_release.GA_BACKEND],
+        self.assertTrue(build_release.bundle_part(y8, build_release.GA_BACKEND)
+                        == build_release.bundle_part(itch, build_release.GA_BACKEND),
                         'y8 gameanalytics.js differs from the itch one')
         for portal in ('gamepix', 'playgama'):
             with self.subTest(portal=portal):
                 files = self.zips[portal]
-                self.assertIn('analytics/backends/none.js', files)
-                self.assertFalse([n for n in files if 'gameanalytics' in n.lower()])
+                self.assertIn('analytics/backends/none.js', build_release.bundle_parts(files))
+                self.assertFalse([n for n in list(files) + list(build_release.bundle_parts(files))
+                                  if 'gameanalytics' in n.lower()])
                 self.assertNotIn(b'GameAnalytics', files['index.html'])
-        self.evidence['cases']['static'] = {'itch_scripts': srcs[i - 1:i + 3], 'pass': True}
+        self.evidence['cases']['static'] = {'itch_tags': tags, 'itch_bundle_parts': srcs[i - 1:i + 2], 'pass': True}
 
     def test_02_boot_initializes_once_with_injected_keys(self):
         page, errors = self.boot()
