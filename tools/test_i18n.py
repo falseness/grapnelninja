@@ -176,6 +176,29 @@ class I18nTests(unittest.TestCase):
         self.assertEqual((missing_ru, missing_en, empty, placeholders), ([], [], [], {}))
         self.assertEqual(same, ['game.title', 'hud.fps', 'mode.grapple_over'])
 
+    def test_every_level_section_has_a_label(self):
+        # The HUD draws I18N.t(section.labelKey || 'climb.section.' + id) (menu.js), and t()
+        # returns the key itself when it is missing (TASK-906): every section of the
+        # shipped level (leveldata.js) needs a label in both dictionaries.
+        src = (ROOT / 'leveldata.js').read_text(encoding='utf-8')
+        start = src.index('window.GRAPPLE_OVER_BUNDLED_LEVEL')
+        level, _ = json.JSONDecoder().raw_decode(src, src.index('{', start))
+        sections = [{'id': s['id'], 'key': s.get('labelKey') or 'climb.section.' + s['id']}
+                    for s in level['sections']]
+        self.assertTrue(sections)
+        page = self.open('en-US')
+        got = page.evaluate('''sections => Object.fromEntries(['en', 'ru'].map(lang => {
+            I18N.language = lang
+            return [lang, sections.map(s => ({id: s.id, key: s.key, label: I18N.t(s.key),
+                own: s.key in I18N.dictionaries[lang]}))]
+        }))''', sections)
+        page.evaluate("I18N.language = 'en'")
+        raw = {lang: [r['id'] for r in rows if r['label'] == r['key'] or not r['own']]
+               for lang, rows in got.items()}
+        print(f'  {level.get("layoutId")}: {len(sections)} sections, unlabeled {raw}', file=sys.stderr)
+        self.assertEqual(raw, {'en': [], 'ru': []},
+                         f'level sections without a climb.section label: {raw}')
+
     def test_cyrillic_glyphs_render(self):
         page = self.open('ru-RU')
         letters = 'ЖЛФЩЯбдж'
