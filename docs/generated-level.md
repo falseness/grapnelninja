@@ -11,6 +11,12 @@ safe space hits the wall instead of falling toward the map edge (18 bodies
 moved. `--no-safe-walls` gives the previous shipped v21 byte for byte (same
 guidelines file). v21 saves restart at the spawn.
 
+Since 2026-11-05 the second opening island P1 is mirrored left-right about its
+own centre (`--mirror-p1`, the default; `--no-mirror-p1` gives the earlier v22
+byte for byte). The top face is unchanged; the deep end of the underside now
+faces the spawn, so the first jump (S06-03) gap is 603 (111.66% R) instead of
+120% R. The layout id stays `extended-mountain-v22`, so saves are kept.
+
 Layout `extended-mountain-v21` (previous, TASK-774) is the generator output
 with `--no-safe-walls` and no layout flag. It is v20 with section
 `SEC-sky-spire` ("Sky Spire" / "Небесный шпиль") added above the gauntlet

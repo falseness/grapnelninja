@@ -2877,6 +2877,39 @@ def restore_guard_coverage(m, clearance, reserved=()):
         band.update(x=x,width=right-x,polygon=poly,nearestSolidClearance=nearest)
 
 
+def mirror_opening_p1(m, opening):
+    """Mirror the second island P1 about its own vertical centre line (same box, same top face) and
+    re-measure only the transfers and pair checks that touch P1 (later sections keep their own rules)."""
+    f = next(f for f in m['fragments'] if f['semanticId'] == 'P1')
+    g = mirror_fragment(f, f['x'] + f['width'] / 2)
+    if 'bounceSign' in f:
+        g['bounceSign'] = -f['bounceSign']
+    f.clear(); f.update(g)
+    # The minimum-side resize records of P1 describe the same shapes, mirrored the same way.
+    w = f['width']
+    for key in ('changed', 'laterChanged'):
+        for c in m.get('minimumSides', {}).get(key, []):
+            if c['fragment'] == f['id']:
+                for side in ('before', 'after'):
+                    c[side] = [[[w - x, y] for x, y in poly[::-1]] for poly in c[side]]
+    fs = m['fragments']; i = fs.index(f)
+    for row in m['encounters']:
+        n = row['number']
+        if n - 1 != i and n != i:
+            continue
+        a, b = fs[n-1:n+1]
+        d, w, _, _ = gap(a, b)
+        if row.get('originalNumber', n) not in TARGETS and d < 1080 - .01:
+            raise ValueError('Mirrored P1: transfer %s gap %.2f below the 200%% release-gap minimum' % (row['id'], d))
+        row.update(percent=round(d/5.4, 2) if opening else row['percent'], distance=d, witness=w,
+                   flight=[svg.contact(a), svg.contact(b)])
+    for c in m['pairChecks']:
+        if f['id'] in (c['source'], c['target']):
+            other = next(x for x in fs if x['id'] == (c['target'] if c['source'] == f['id'] else c['source']))
+            d = gap(f, other)[0]
+            c.update(minimumGap=d, passOutsideRange=d-21.6 > 540)
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source',help='concept measurements JSON (required unless --big-zone-fixture)')
@@ -2921,6 +2954,10 @@ def main():
                     help='(with --sky-spire) a green wall on the outer side of every safe space S0..S8 / T0..T8, '
                          '240 x 1,080, covering the TASK-778 escape band (TASK-779..781, SAFE_WALLS, WALL_BANDS). '
                          'Default: on (shipped v22) with the Sky Spire; --no-safe-walls gives the previous shipped v21')
+    ap.add_argument('--mirror-p1', action=argparse.BooleanOptionalAction, default=True,
+                    help='(shipped run) mirror the second opening island P1 left-right about its own centre, so its '
+                         'deep end faces the spawn (players fell at the start). Same layout id, saves kept. '
+                         '--no-mirror-p1 gives the previous shipped v22 byte for byte')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -2992,6 +3029,8 @@ def main():
         raise ValueError('--safe-walls needs the gauntlet and the Sky Spire (--ext-summit-gauntlet --sky-spire)')
     if not args.ext_summit and (args.ext_summit_fold or args.ext_summit_riser or args.ext_summit_gauntlet):
         raise ValueError('--ext-summit-fold / --ext-summit-riser / --ext-summit-gauntlet need --ext-summit')
+    if shipped and args.mirror_p1:
+        mirror_opening_p1(m, opening)
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);
