@@ -161,9 +161,14 @@ var ANALYTICS_BACKEND = (function()
         const http = api && api.instance
         if (!host || !http || typeof http.hostName !== 'string')
             return
+        // Neutral paths: EasyPrivacy's generic '/stats.*/event' rule blocks
+        // <host>/v2/<key>/events. The relay maps /q/<key>/e -> /v2/<key>/events
+        // and /r/i -> /remote_configs/v1/init (deploy: /etc/caddy/Caddyfile)
         http.hostName = host
-        http.baseUrl = http.protocol + '://' + host + '/' + http.version
-        http.remoteConfigsBaseUrl = http.protocol + '://' + host + '/remote_configs/' + http.remoteConfigsVersion
+        http.baseUrl = http.protocol + '://' + host + '/q'
+        http.eventsUrlPath = 'e'
+        http.remoteConfigsBaseUrl = http.protocol + '://' + host + '/r'
+        http.initializeUrlPath = 'i'
     }
 
     // The SDK's beforeunload handler ends the session (storing session_end)
