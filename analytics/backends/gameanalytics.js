@@ -27,7 +27,8 @@
 // SDK's localStorage store so a revisit does not send them again. After
 // endSession nothing is sent until startSession() reopens the session (a
 // page restored from the back/forward cache, TASK-907). A pagehide without
-// endSession ends the session the same way.
+// endSession ends the session the same way. flush() (a hidden tab, TASK-908)
+// sends the same way without ending the session.
 // Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
 var GA_KEYS = {gameKey: '', secretKey: ''}
 
@@ -340,6 +341,19 @@ var ANALYTICS_BACKEND = (function()
         endSession()
         {
             endNow()
+        },
+
+        // TASK-908: the tab went hidden (a phone may discard it with no
+        // pagehide): the queued GA-thread tasks run now and the event store
+        // goes out by keepalive, as on pagehide but without endSession: the
+        // session and the SDK's timers go on. The sent rows leave the store
+        // (the SDK's next timed processEvents resets every row to 'new', and
+        // a discarded page would send them again on the next visit). Before
+        // the SDK is live or after endSession there is nothing to send.
+        flush()
+        {
+            if (live && !ended)
+                flushForUnload()
         },
 
         // status: 'Start' | 'Complete' | 'Fail' (EGAProgressionStatus)

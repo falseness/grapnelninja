@@ -8,6 +8,9 @@ const TELEMETRY = (() =>
     const modeMs = {single: 0, double: 0}
     // The last thing that happened in the run, sent once on pagehide
     let lastEvent = null, quitSent = false
+    // Hidden tab (TASK-908): sent for this hidden period; hidden periods sent
+    const HIDE_MAX = 5
+    let hideSent = false, hidesSent = 0
     // A pause screen is open (ui:pause:open sent, no ui:pause:close yet)
     let pauseOpen = false
     const session = createSession()
@@ -111,6 +114,24 @@ const TELEMETRY = (() =>
             quitSent = true
             ANALYTICS.design('quit:' + lastEvent.type + (lastEvent.sectionId ? ':' + lastEvent.sectionId : ''))
         },
+        // visibilitychange to hidden during a Grapple Over run (TASK-908): a
+        // phone may discard the hidden tab later with no pagehide. Once per
+        // hidden period, at most HIDE_MAX per page: design('hide:<type>:<sectionId>')
+        // for the last run event (as sendQuit), 'hide_long_fall:<section>'
+        // after a recent long fall, 'longest_fall:hide'. True when counted
+        sendHide()
+        {
+            if (hideSent || hidesSent >= HIDE_MAX) return false
+            hideSent = true
+            hidesSent++
+            if (lastEvent)
+                ANALYTICS.design('hide:' + lastEvent.type + (lastEvent.sectionId ? ':' + lastEvent.sectionId : ''))
+            falls.sendHideAfterLongFall()
+            falls.sendLongest('hide')
+            return true
+        },
+        // visible again: the next hidden period may send
+        shown() { hideSent = false },
         // pageshow from the back/forward cache (TASK-907): the page lives on,
         // so its next pagehide sends the quit-time events again
         reopen()
@@ -346,7 +367,7 @@ function createFallTelemetry()
             longFall.at = Date.now()
         },
         // design('longest_fall:<tag>', bucket): 'session' on pagehide,
-        // 'complete' at the summit; nothing before any fall
+        // 'complete' at the summit, 'hide' on a hidden tab; nothing before any fall
         sendLongest(tag)
         {
             if (longest > 0) ANALYTICS.design('longest_fall:' + tag, bucket(longest))
@@ -358,6 +379,13 @@ function createFallTelemetry()
             if (quitSent || !longFall || Date.now() - longFall.at > QUIT_WINDOW_MS) return
             quitSent = true
             ANALYTICS.design('quit_long_fall:' + longFall.section, bucket(longFall.displacement))
+        },
+        // hidden tab (TASK-908): design('hide_long_fall:<section>', bucket)
+        // within QUIT_WINDOW_MS of a long fall; TELEMETRY.sendHide bounds it
+        sendHideAfterLongFall()
+        {
+            if (!longFall || Date.now() - longFall.at > QUIT_WINDOW_MS) return
+            ANALYTICS.design('hide_long_fall:' + longFall.section, bucket(longFall.displacement))
         },
         // pageshow from the back/forward cache: quit_long_fall may be sent again
         reopen() { quitSent = false },

@@ -226,7 +226,12 @@
             // ANALYTICS.sessionEnd last. A pageshow from the back/forward cache
             // (TASK-907) reopens it all: a new analytics session, Start again
             // for the run and section in progress, and the next pagehide sends
-            // the quit-time events again
+            // the quit-time events again. A hidden tab during a Grapple Over
+            // run (TASK-908; a phone may discard it with no pagehide): once per
+            // hidden period, at most 5 per page, hide:<last event>, a hide
+            // soon after a long fall and longest_fall:hide, then ANALYTICS.flush()
+            // delivers them at once; the session stays open. Registered before
+            // the pause handler, so the last event is the one before the auto pause
             function watchAnalytics()
             {
                 const MAX_ERRORS = 10
@@ -259,6 +264,17 @@
                         () => CLIMB_UI.abandonProgression()])
                         try { step() } catch (e) {}
                     ANALYTICS.sessionEnd()
+                })
+                document.addEventListener('visibilitychange', () =>
+                {
+                    try
+                    {
+                        if (document.visibilityState !== 'hidden')
+                            return TELEMETRY.shown()
+                        if (!ended && version === 'grapple_over' && runInProgress && TELEMETRY.sendHide())
+                            ANALYTICS.flush()
+                    }
+                    catch (e) {}
                 })
                 window.addEventListener('pageshow', e =>
                 {

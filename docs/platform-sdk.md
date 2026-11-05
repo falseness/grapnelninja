@@ -302,6 +302,9 @@ recovery, with its section), `restart:<mode>` (restarts), `goback:<sectionId>`
 | `longest_fall:session` | fall bucket of the session's longest single fall | `pagehide`, after `quit:*`; nothing if the player never fell |
 | `longest_fall:complete` | fall bucket of the session's longest single fall so far | when the game is beaten (summit), after the run Complete |
 | `quit_long_fall:<sectionId>` | fall bucket of that fall | `pagehide` within 30 s (wall clock) after the last moment of a fall longer than `LONG_FALL_THRESHOLD` (4000), with that fall's section; at most once per page |
+| `hide:<type>:<sectionId>` | none | the tab goes hidden (`visibilitychange`) during a Grapple Over run: the last run event, same `<type>`/`<sectionId>` as `quit:*` (`:<sectionId>` left out when it has none); see "Hidden tab" below |
+| `hide_long_fall:<sectionId>` | fall bucket of that fall | the tab goes hidden within 30 s (wall clock) after the last moment of a fall longer than `LONG_FALL_THRESHOLD`, with that fall's section |
+| `longest_fall:hide` | fall bucket of the session's longest single fall so far | the tab goes hidden, after `hide:*` / `hide_long_fall:*`; nothing if the player never fell |
 | `goback_offer:<sectionId>` | fall bucket when offered (10000, 20000, ...) | the 'Go back?' dialog opens (every offer, again after Keep falling) |
 | `goback_choice:keep:<sectionId>` | none | Keep falling (button, Escape, or a rewarded ad answering `closed`) |
 | `goback_choice:back:<sectionId>` | none | Go back pressed |
@@ -316,7 +319,25 @@ recovery, with its section), `restart:<mode>` (restarts), `goback:<sectionId>`
 
 `pagehide` order: `mode_time:*`, `playtime:*`, `quit:*`,
 `longest_fall:session`, `quit_long_fall:*`, `section_height:*`, section
-Fail, run Fail, `sessionEnd()`. Cost: one comparison per physics cycle
+Fail, run Fail, `sessionEnd()`.
+
+**Hidden tab (TASK-908).** A phone player usually leaves by switching app or
+tab, and a backgrounded mobile tab is often discarded later with no
+`pagehide`, so the quit-time events above would never be sent. On
+`visibilitychange` to hidden while a Grapple Over run is in progress (and
+the page has not had its `pagehide`), index.html `watchAnalytics` sends,
+once per hidden period (visible again re-arms it) and at most 5 times per
+page: `hide:<type>:<sectionId>`, `hide_long_fall:<sectionId>` (only within
+30 s of a long fall), `longest_fall:hide`, then `ANALYTICS.flush()`. Its
+listener runs before the auto pause, so `<type>` is the event before that
+pause. `flush()` (none.js: no-op) makes the GameAnalytics backend run the
+SDK's queued tasks and send its event store at once by `fetch(keepalive)`
+(the pagehide sender, TASK-899) WITHOUT `endSession`: no `session_end`, the
+session goes on when the tab is visible again. `pagehide` is unchanged and
+still sends `quit:*` etc. once per page. At most 3 events per hidden period,
+15 per page.
+
+Cost: one comparison per physics cycle
 (`TELEMETRY.falling`, from `LONG_FALL.step`) and one per frame
 (`CLIMB_UI.trackSection`). Tested by `tools/test_telemetry_gameplay.py`
 (scripted runs, exact expected sequences).

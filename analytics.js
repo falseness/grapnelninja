@@ -8,6 +8,7 @@
 //
 //   init({build})                  -> initialize({build})
 //   sessionStart() / sessionEnd()  -> startSession() / endSession()
+//   flush()                        -> flush() (send what is queued now, session stays open)
 //   progression(status, level1, level2?, level3?, score?)
 //                                  -> addProgressionEvent(status, p1, p2, p3, score)
 //   design(id, value?)             -> addDesignEvent(id, value)
@@ -124,6 +125,13 @@ const ANALYTICS = (function()
         sessionEnd: safe(function()
         {
             delegate('endSession', [])
+        }),
+
+        // A hidden tab may be discarded without pagehide (TASK-908): deliver
+        // the events queued so far now, without ending the session
+        flush: safe(function()
+        {
+            delegate('flush', [])
         }),
 
         // status 'Start' | 'Complete' | 'Fail'; levels fill in order

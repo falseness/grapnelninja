@@ -21,6 +21,12 @@ var ANALYTICS_BACKEND = {
     // https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
     endSession() {},
 
+    // Deliver the events queued so far now; the session stays open (TASK-908)
+    // REPLACE: no GameAnalytics call of its own: run the SDK's queued tasks and
+    // send its event store (gameanalytics.js flushForUnload, without endSession)
+    // https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
+    flush() {},
+
     // status: 'Start' | 'Complete' | 'Fail' (EGAProgressionStatus)
     // REPLACE: GameAnalytics.addProgressionEvent(EGAProgressionStatus[status], p1, p2, p3, score)
     // https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT

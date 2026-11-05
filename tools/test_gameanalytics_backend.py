@@ -31,6 +31,12 @@ record their arguments):
   until the SDK's new session started, then go out; the next pagehide hands
   the quit-time events and endSession again and sends one more keepalive
   batch; a non-persisted pageshow or a second persisted one does nothing.
+- TASK-908 hidden tab: visibilitychange to hidden runs the queued GA-thread
+  tasks and sends hide:*, hide_long_fall:*, longest_fall:hide in one
+  fetch(keepalive) /events POST with NO endSession / session_end; the sent
+  rows leave the store; once per hidden period, at most 5 per page; after
+  visible again later events still reach the SDK, and pagehide still ends
+  the session with quit:* and session_end.
 - static: the itch zip loads the SDK + gameanalytics.js instead of none.js
   and ships the SDK unmodified with its licence; the y8 zip ships the same
   SDK and keys; the dev index.html and the gamepix / playgama zips stay on
@@ -510,6 +516,68 @@ class GameAnalyticsBackendTest(unittest.TestCase):
         self.assertEqual(errors['page'], [])
         self.evidence['cases']['bfcache_pageshow'] = {'after_restore': after, 'handed_at_second_pagehide': handed,
                                                       'second_keepalive_body': body, 'pass': True}
+
+    def test_10_hidden_tab_flushes_without_ending_the_session(self):
+        page, errors = self.boot(mode='threaded')
+        visibility = '''state => { Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => state})
+            Object.defineProperty(document, 'hidden', {configurable: true, get: () => state === 'hidden'})
+            document.dispatchEvent(new Event('visibilitychange')) }'''
+        section = page.evaluate("() => { const s = CLIMB_UI.currentSection().id; TELEMETRY.mark('grapple', s); "
+                                "TELEMETRY.falling(4500); return s }")
+        mark = len(self.calls(page))
+        page.evaluate(visibility, 'hidden')
+        page.evaluate(visibility, 'hidden')
+        page.wait_for_timeout(200)
+        calls = self.calls(page)[mark:]
+        names = [c[0] for c in calls]
+        self.assertNotIn('endSession', names)
+        designs = [c[1][0] for c in calls if c[0] == 'addDesignEvent']
+        self.assertEqual(designs[:3], ['hide:grapple:' + section, 'hide_long_fall:' + section, 'longest_fall:hide'],
+                         designs)
+        state = page.evaluate('() => ({fetch: __gaFetch, xhr: __gaThreaded.xhr, queue: __gaThreaded.queue.length, '
+                              'ran: __gaThreaded.ran, rows: __gaThreaded.rows, saved: window.__gaSaved})')
+        self.assertEqual(len(state['fetch']), 1, 'a second hidden event in the same period sent again')
+        sent = state['fetch'][0]
+        body = json.loads(sent['body'])
+        self.assertTrue(sent['keepalive'])
+        self.assertTrue(sent['url'].endswith('/events'))
+        self.assertEqual(sent['auth'], 'hmac:secret:%d' % len(sent['body']))
+        for d in designs[:3]:
+            self.assertIn('design:' + d, body)
+        self.assertNotIn('session_end', body)
+        self.assertNotIn('session_end', state['ran'])
+        self.assertEqual(state['xhr'], [])
+        self.assertIn('answer:200:batch1', state['ran'])
+        # Only the auto pause's event, queued after the flush, stays in the store
+        self.assertEqual([r['event'] for r in state['rows']], [], state['rows'])
+        self.assertEqual(state['queue'], 1, 'the auto pause event should be the only queued task')
+        # Visible again: later events still reach the SDK, the next hidden period sends again
+        page.evaluate(visibility, 'visible')
+        n = len(self.calls(page))
+        page.evaluate("() => ANALYTICS.design('ui:pause:close')")
+        self.assertEqual(self.calls(page)[n:], [['addDesignEvent', ['ui:pause:close']]])
+        for _ in range(6):
+            page.evaluate(visibility, 'hidden')
+            page.evaluate(visibility, 'visible')
+        page.wait_for_timeout(300)
+        state = page.evaluate('() => ({fetch: __gaFetch.length, ran: __gaThreaded.ran})')
+        self.assertEqual(state['fetch'], 5, 'hidden periods are capped at 5 per page')
+        self.assertNotIn('session_end', state['ran'])
+        self.assertNotIn('endSession', [c[0] for c in self.calls(page)])
+        # pagehide still ends the session with the quit-time events
+        n = len(self.calls(page))
+        page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false}))")
+        page.wait_for_timeout(300)
+        tail = self.calls(page)[n:]
+        self.assertEqual(tail[-1], ['endSession', []])
+        self.assertTrue(any(c[0] == 'addDesignEvent' and c[1][0].startswith('quit:') for c in tail), tail)
+        last = page.evaluate('() => JSON.parse(__gaFetch[__gaFetch.length - 1].body)')
+        self.assertEqual(last[-1], 'session_end')
+        self.assertEqual(page.evaluate('() => __gaFetch.length'), 6)
+        self.assertEqual(errors['page'], [])
+        self.evidence['cases']['hidden_flush'] = {'hidden_designs': designs, 'keepalive_body': body,
+                                                  'keepalive_requests_after_7_periods': state['fetch'],
+                                                  'pagehide_body': last, 'pass': True}
 
 
 if __name__ == '__main__':

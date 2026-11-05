@@ -15,6 +15,12 @@
   the section the pagehide failed; the next pagehide sends quit:*, the Fails
   and sessionEnd again. A non-persisted pageshow and a second persisted one
   send nothing.
+- TASK-908: visibilitychange to hidden during the Grapple Over run sends,
+  before the auto pause, design hide:<last event>, hide_long_fall:<section>
+  (within 30 s of a long fall), longest_fall:hide, then ANALYTICS.flush();
+  never sessionEnd. Once per hidden period (a second hidden event sends
+  nothing until visible again), at most 5 hidden periods per page; pagehide
+  afterwards still sends quit:* and sessionEnd.
 
 The run plays in real time (~3 s single, ~2 s double, ~2 s paused), then
 the frame loop is frozen and a fall is driven through production physics()
@@ -167,6 +173,56 @@ class QuitTests(unittest.TestCase):
         self.assertEqual([e['args'] for e in tail if e['fn'] == 'addProgressionEvent'],
                          [['Fail', 'grapple_over', progress['id']], ['Fail', 'grapple_over', None]])
         OUT.append({'bfcache_restore': restored, 'second_pagehide': tail})
+        page.close()
+
+    def test_01_c_hidden_tab_sends_and_flushes_without_ending(self):
+        page = self.browser.new_page(viewport={'width': 1280, 'height': 720})
+        page.on('pageerror', lambda e: self.errors.append(str(e)))
+        page.goto(self.url)
+        wait_for_boot_run(page)
+        page.wait_for_timeout(500)
+        visibility = '''state => { Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => state})
+            Object.defineProperty(document, 'hidden', {configurable: true, get: () => state === 'hidden'})
+            document.dispatchEvent(new Event('visibilitychange')) }'''
+        section = page.evaluate('CLIMB_UI.currentSection().id')
+        page.evaluate("s => { TELEMETRY.mark('grapple', s); TELEMETRY.falling(4500) }", section)
+        fall_section = page.evaluate('TELEMETRY.fallState().longFall.section')
+        periods = []
+        for i in range(7):
+            start = page.evaluate('ANALYTICS.debugLog.length')
+            page.evaluate(visibility, 'hidden')
+            # A second hidden event in the same period sends nothing more
+            page.evaluate(visibility, 'hidden')
+            periods.append(page.evaluate(LOG, start))
+            page.evaluate(visibility, 'visible')
+        first = periods[0]
+        expected = [{'fn': 'addDesignEvent', 'args': ['hide:grapple:' + section, None]},
+                    {'fn': 'addDesignEvent', 'args': ['hide_long_fall:' + fall_section, 4000]},
+                    {'fn': 'addDesignEvent', 'args': ['longest_fall:hide', 4000]},
+                    {'fn': 'flush', 'args': []}]
+        self.assertEqual(first[:4], expected, first)
+        # The auto pause comes after (its mark is the next period's last event)
+        self.assertEqual(first[4:], [{'fn': 'addDesignEvent', 'args': ['ui:pause:open:auto', None]}], first)
+        for n, period in enumerate(periods):
+            hides = [e for e in period if e['fn'] == 'flush']
+            self.assertEqual(len(hides), 1 if n < 5 else 0, (n, period))
+            self.assertFalse(any(e['fn'] == 'endSession' for e in period), period)
+            if 0 < n < 5:
+                # Already paused: nothing follows the flush
+                self.assertEqual(period[-1]['fn'], 'flush', period)
+        self.assertEqual(periods[1][0]['args'][0], 'hide:pause:' + section, periods[1])
+        self.assertEqual([e for p in periods[5:] for e in p], [], 'hidden periods past the cap sent events')
+        end = page.evaluate('ANALYTICS.debugLog.length')
+        page.evaluate(PAGEHIDE)
+        tail = page.evaluate(LOG, end)
+        self.assertEqual(len(design(tail, 'quit:')), 1, tail)
+        self.assertEqual(design(tail, 'longest_fall:session')[0]['args'], ['longest_fall:session', 4000])
+        self.assertEqual(tail[-1]['fn'], 'endSession', tail)
+        # After pagehide a hidden tab sends nothing (the session is over)
+        after = page.evaluate('ANALYTICS.debugLog.length')
+        page.evaluate(visibility, 'hidden')
+        self.assertEqual(page.evaluate(LOG, after), [])
+        OUT.append({'hidden_periods': periods, 'pagehide_after_hidden': tail})
         page.close()
 
     def test_02_no_page_errors(self):

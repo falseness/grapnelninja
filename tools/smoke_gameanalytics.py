@@ -47,10 +47,23 @@ new session's 'user' event, the first and the second pagehide each pass the
 --quit checks, and no event arrived after the restore more often than the
 game handed it to the SDK after the restore.
 
+TASK-908 --hidden: a phone player switching app or tab (the tab may be
+discarded later with no pagehide). After the boot session (played until the
+game has a last run event and a fall), the document turns hidden
+(visibilityState override + visibilitychange, as tools/test_platform.py
+does), stays hidden --hidden-seconds, turns visible again and the player
+closes the auto pause (P key). SDK calls are tagged by phase (hidden /
+visible). Passes only if hide:<type>:<section> and longest_fall:hide were
+handed to the SDK while hidden and arrived in an /events POST answered 200
+within 2 s of the hidden switch, no endSession was called and no
+session_end was sent before the final sessionEnd, and a design event of the
+visible phase arrived 200 in the same GameAnalytics session (session_id, its
+first 8 characters recorded) with no new session start ('user' event).
+
 GA_GAME_KEY / GA_SECRET_KEY are read from the environment or
 /root/credentials/grapnelninja/credentials.env only to redact them.
 
-    python3 tools/smoke_gameanalytics.py [--zip ZIP] [--quit | --bfcache] --out ga-smoke.json
+    python3 tools/smoke_gameanalytics.py [--zip ZIP] [--quit | --bfcache | --hidden] --out ga-smoke.json
 """
 import argparse
 from contextlib import ExitStack
@@ -229,6 +242,51 @@ def netlog_requests(path):
     return [r for r in found.values() if r.get('url')]
 
 
+VISIBILITY = '''state => { Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => state})
+    Object.defineProperty(document, 'hidden', {configurable: true, get: () => state === 'hidden'})
+    document.dispatchEvent(new Event('visibilitychange')) }'''
+
+
+def hidden_verdict(calls, rows, hidden_t, visible_t, end_t):
+    """calls: [[phase, fn, args]] from the hidden switch on; rows: GA rows after it."""
+    hidden_ids = [event_id(fn, a) for ph, fn, a in calls if ph == 'hidden' and event_id(fn, a)]
+    visible_ids = [event_id(fn, a) for ph, fn, a in calls if ph == 'visible' and event_id(fn, a)]
+    hide_ids = [e for e in hidden_ids if e.startswith(('design:hide:', 'design:hide_long_fall:',
+                                                        'design:longest_fall:hide'))]
+    ok_rows = [r for r in rows if r['url'].endswith('/events') and r['status'] == 200 and 't' in r]
+    fast = [c for r in ok_rows if r['t'] <= hidden_t + 2.0 for c in r.get('categories') or []]
+    hide_rows = [r for r in ok_rows if set(hide_ids) & set(r.get('categories') or [])]
+    hide_sessions = sorted({sid for r in hide_rows for sid in r.get('sessions') or []})
+    later = [r for r in ok_rows if r['t'] >= visible_t and set(visible_ids) & set(r.get('categories') or [])]
+    later_sessions = sorted({sid for r in later for sid in r.get('sessions') or []})
+    before_end = [c for r in rows if r['t'] < end_t for c in r.get('categories') or []]
+    return {
+        'sdk_calls_hidden': [[fn, a] for ph, fn, a in calls if ph == 'hidden'],
+        'sdk_calls_visible': [[fn, a] for ph, fn, a in calls if ph == 'visible'],
+        'hide_ids_handed': hide_ids,
+        'has_hide_type_section': any(e.startswith('design:hide:') and e.count(':') == 3 for e in hide_ids),
+        'has_longest_fall_hide': 'design:longest_fall:hide' in hide_ids,
+        'hide_ids_delivered_200_within_2s': [e for e in hide_ids if e in fast],
+        'hide_delivery_seconds_after_hidden': [round(r['t'] - hidden_t, 2) for r in hide_rows],
+        'endSession_called_before_final_end': any(fn == 'endSession' for ph, fn, a in calls
+                                                  if ph in ('hidden', 'visible')),
+        'session_end_sent_before_final_end': 'session_end' in before_end,
+        'new_session_user_event_after_hidden': 'user' in before_end,
+        'visible_ids_handed': visible_ids,
+        'visible_ids_delivered_200': [e for e in visible_ids
+                                      if any(e in (r.get('categories') or []) for r in later)],
+        'hide_batch_sessions': hide_sessions,
+        'visible_batch_sessions': later_sessions,
+        'pass': bool(hide_ids) and 'design:longest_fall:hide' in hide_ids
+        and any(e.startswith('design:hide:') and e.count(':') == 3 for e in hide_ids)
+        and all(e in fast for e in hide_ids)
+        and not any(fn == 'endSession' for ph, fn, a in calls if ph in ('hidden', 'visible'))
+        and 'session_end' not in before_end and 'user' not in before_end
+        and bool(visible_ids) and any(set(visible_ids) & set(r.get('categories') or []) for r in later)
+        and len(hide_sessions) == 1 and hide_sessions == later_sessions,
+    }
+
+
 def event_id(fn, args):
     """GA event id of an add*Event call: design 'design:<id>', progression 'progression:Fail:a:b'."""
     if fn == 'addDesignEvent':
@@ -282,11 +340,16 @@ def main(argv=None):
     parser.add_argument('--revisit-seconds', type=float, default=12.0)
     parser.add_argument('--bfcache', action='store_true',
                         help='leave to a same-origin page, come back from the back/forward cache, leave again')
+    parser.add_argument('--hidden', action='store_true',
+                        help='turn the document hidden mid-run (no pagehide), then visible again')
+    parser.add_argument('--hidden-seconds', type=float, default=5.0)
+    parser.add_argument('--visible-seconds', type=float, default=20.0,
+                        help='--hidden: longest wait for the visible phase\'s events')
     parser.add_argument('--restore-seconds', type=float, default=30.0,
                         help='--bfcache: longest wait for the restored session\'s events')
     args = parser.parse_args(argv)
-    if args.quit and args.bfcache:
-        parser.error('--quit and --bfcache are separate runs')
+    if sum([args.quit, args.bfcache, args.hidden]) > 1:
+        parser.error('--quit, --bfcache and --hidden are separate runs')
     env = credentials()
     secrets = {name: env[name] for name in ('GA_GAME_KEY', 'GA_SECRET_KEY') if env.get(name)}
 
@@ -353,6 +416,17 @@ def main(argv=None):
                 return [f'<unreadable: {type(e).__name__}>']
             return None
 
+        def sessions(request):
+            # GameAnalytics session ids of an /events body, first 8 characters
+            try:
+                body = request.post_data_buffer
+                if body and body[:2] == b'\x1f\x8b':
+                    body = gzip.decompress(body)
+                return sorted({str(e.get('session_id'))[:8] for e in json.loads(body)
+                               if isinstance(e, dict) and e.get('session_id')})
+            except Exception:  # noqa: BLE001 - evidence only
+                return []
+
         def on_response(response):
             if is_ga(response.url):
                 row = {'t': round(time.time() - started, 2), 'method': response.request.method,
@@ -360,6 +434,8 @@ def main(argv=None):
                        'type': response.request.resource_type}
                 if response.url.endswith('/events'):
                     row['categories'] = categories(response.request)
+                    if args.hidden:
+                        row['sessions'] = sessions(response.request)
                     seen_auth.add((response.request.headers or {}).get('authorization'))
                 rows.append(row)
 
@@ -398,7 +474,51 @@ def main(argv=None):
                 break
         quit_calls, leave_at = [], None
         marks, restored = [], False
-        if args.bfcache:
+        hidden_marks = {}
+        if args.hidden:
+            # A last run event with a section and a fall, so hide:* and longest_fall:hide have something
+            deadline = time.time() + 30
+            while time.time() < deadline and not page.evaluate(
+                    '() => !!(TELEMETRY.lastEvent()?.sectionId && TELEMETRY.fallState().longest > 0)'):
+                page.mouse.click(box['x'] + box['width'] * 0.7, box['y'] + box['height'] * 0.3)
+                page.wait_for_timeout(700)
+            phase = ['play']
+            page.on('console', lambda m: quit_calls.append([phase[0]] + json.loads(m.text[len('GA-CALL '):]))
+                    if m.text.startswith('GA-CALL ') else None)
+            page.evaluate(RECORD_SDK)
+            page.wait_for_timeout(500)
+            state['before_hidden'] = page.evaluate('() => ({lastEvent: TELEMETRY.lastEvent(), '
+                                                   'longest: TELEMETRY.fallState().longest})')
+            leave_at = len(rows)
+            phase[0] = 'hidden'
+            hidden_marks['hidden'] = round(time.time() - started, 2)
+            rows.append({'url': '', 't': hidden_marks['hidden'], 'marker': 'hidden'})
+            page.evaluate(VISIBILITY, 'hidden')
+            page.wait_for_timeout(args.hidden_seconds * 1000)
+            phase[0] = 'visible'
+            hidden_marks['visible'] = round(time.time() - started, 2)
+            rows.append({'url': '', 't': hidden_marks['visible'], 'marker': 'visible'})
+            page.evaluate(VISIBILITY, 'visible')
+            page.wait_for_timeout(500)
+            # The player closes the auto pause
+            for _ in range(3):
+                if not page.evaluate('() => menu.gamePaused'):
+                    break
+                page.keyboard.press('p')
+                page.wait_for_timeout(700)
+            deadline = time.time() + args.visible_seconds
+            while time.time() < deadline:
+                page.wait_for_timeout(1000)
+                wanted = [event_id(fn, a) for ph, fn, a in quit_calls if ph == 'visible' and event_id(fn, a)]
+                got = delivered_200([r for r in rows if r.get('t', 0) >= hidden_marks['visible']])
+                if wanted and any(w in got for w in wanted):
+                    break
+            phase[0] = 'end'
+            hidden_marks['end'] = round(time.time() - started, 2)
+            rows.append({'url': '', 't': hidden_marks['end'], 'marker': 'final sessionEnd'})
+            page.evaluate('() => ANALYTICS.sessionEnd()')
+            page.wait_for_timeout(2000)
+        elif args.bfcache:
             page.evaluate(RECORD_PHASES)
             page.wait_for_timeout(500)
             leave_at = len(rows)
@@ -529,6 +649,11 @@ def main(argv=None):
         report['sdk_calls_from_leave'] = quit_calls
         report['quit'] = quit_verdict(quit_calls, rows[leave_at:])
         report['pass'] = report['pass'] and report['quit']['pass']
+    if args.hidden:
+        report['mode'] = 'hidden'
+        report['hidden'] = hidden_verdict(quit_calls, rows[leave_at:], hidden_marks['hidden'],
+                                          hidden_marks['visible'], hidden_marks['end'])
+        report['pass'] = report['pass'] and report['hidden']['pass']
     if args.bfcache:
         report['mode'] = 'bfcache'
         report['netlog_ga_requests'] = netlog_summary
@@ -551,6 +676,12 @@ def main(argv=None):
               f'twice {b["delivered_twice_after_restore"]}, leave1 pass {b["leave1_quit"]["pass"]} '
               f'(missing {b["leave1_quit"]["missing"]}), leave2 pass {b["leave2_quit"]["pass"]} '
               f'(missing {b["leave2_quit"]["missing"]})')
+    if args.hidden:
+        h = report['hidden']
+        print(f'hidden: handed {h["hide_ids_handed"]}, 200 within 2 s {h["hide_ids_delivered_200_within_2s"]} '
+              f'({h["hide_delivery_seconds_after_hidden"]} s), endSession {h["endSession_called_before_final_end"]}, '
+              f'session_end {h["session_end_sent_before_final_end"]}, visible 200 {h["visible_ids_delivered_200"]}, '
+              f'sessions {h["hide_batch_sessions"]} / {h["visible_batch_sessions"]}')
     return 0 if report['pass'] else 1
 
 
