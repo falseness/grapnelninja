@@ -15,6 +15,18 @@
 // in a bounded queue and go out in order once the SDK reports it is ready
 // (addRemoteConfigsListener / isRemoteConfigsReady). An SDK without those
 // calls is treated as ready at once.
+//
+// Quit (TASK-899): the SDK runs every add*/endSession call later as a task
+// on its timer "GA thread" and posts by async XHR, so on a page unload the
+// quit-time events were never stored or sent, and its own beforeunload
+// handler stored session_end before the game's pagehide events. Now its
+// beforeunload session end waits for endSession(), which runs the queued
+// GA-thread tasks at once (the events, then session_end and the send) with
+// the /events POST sent by fetch(keepalive) - same body and Authorization
+// header - so it outlives the page; rows handed to that request leave the
+// SDK's localStorage store so a revisit does not send them again. After
+// endSession nothing is sent. A pagehide without endSession ends the session
+// the same way.
 // Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
 var GA_KEYS = {gameKey: '', secretKey: ''}
 
@@ -34,6 +46,10 @@ var ANALYTICS_BACKEND = (function()
     let initialized = false
     let ready = false
     let live = false
+    // endSession ran: later calls are dropped
+    let ended = false
+    // Bytes a keepalive request may carry (browsers allow 64 KiB in flight)
+    const KEEPALIVE_MAX = 60000
 
     function own(table, key)
     {
@@ -77,7 +93,7 @@ var ANALYTICS_BACKEND = (function()
     // until the SDK is ready (live) the call waits in `pending`
     function call(fn, args)
     {
-        if (!ready)
+        if (!ready || ended)
             return
         if (live)
             return deliver(fn, args)
@@ -87,7 +103,7 @@ var ANALYTICS_BACKEND = (function()
 
     function goLive()
     {
-        if (live)
+        if (live || ended)
             return
         live = true
         for (const [fn, args] of pending.splice(0))
@@ -116,6 +132,132 @@ var ANALYTICS_BACKEND = (function()
         }, POLL_MS)
     }
 
+    // gameanalytics.<path> of the real SDK's internals; null in a mock / other SDK
+    function internal(path)
+    {
+        let node = sdk()
+        for (const key of path.split('.'))
+            node = node && node[key]
+        return node || null
+    }
+
+    // The SDK's beforeunload handler ends the session (storing session_end)
+    // before the game's pagehide events: skip that while the page unloads,
+    // endSession() ends it right after those events
+    function holdUnloadSessionEnd()
+    {
+        const threading = internal('threading.GAThreading')
+        const state = internal('state.GAState')
+        if (!threading || typeof threading.endSessionAndStopQueue !== 'function' || !state)
+            return
+        const end = threading.endSessionAndStopQueue
+        threading.endSessionAndStopQueue = function()
+        {
+            if (!ended && state.instance && state.instance.isUnloading)
+                return
+            return end.apply(this, arguments)
+        }
+    }
+
+    // GAHTTPApi.sendRequest(url, payload, extra, gzip, callback, done) for
+    // /events by fetch(keepalive); `sent` collects the batch ids (extra[1])
+    // whose request went out. Anything else uses the SDK's XHR.
+    function keepaliveSender(original, sent)
+    {
+        return function(url, payload, extra, gzip, callback, done)
+        {
+            const fallback = () => original.apply(this, arguments)
+            const size = typeof TextEncoder === 'function' ? new TextEncoder().encode(payload).length
+                : String(payload).length * 3
+            if (gzip || typeof fetch !== 'function' || !/\/events$/.test(url) || size > KEEPALIVE_MAX)
+                return fallback()
+            let request, auth
+            try
+            {
+                auth = internal('utilities.GAUtilities').getHmac(internal('state.GAState').getGameSecret(), payload)
+                request = fetch(url, {method: 'POST', keepalive: true, body: payload,
+                    headers: {'Content-Type': 'application/json', 'Authorization': auth}})
+            }
+            catch (e)
+            {
+                return fallback()
+            }
+            const args = [auth].concat(Array.from(extra || []))
+            sent.push(extra && extra[1])
+            const answer = (status, statusText, text) =>
+            {
+                try { callback({readyState: 4, status, statusText, responseText: text}, url, done, args) }
+                catch (e) {}
+            }
+            request.then(r => r.text().then(text => answer(r.status, r.statusText, text)))
+                .catch(() => answer(0, '', ''))
+        }
+    }
+
+    // Runs the SDK's queued GA-thread tasks now (the add* events, then the
+    // endSession task that stores session_end and sends the batch), with
+    // /events sent by keepalive; then also sends anything still new
+    function flushForUnload()
+    {
+        const threading = internal('threading.GAThreading')
+        const http = internal('http.GAHTTPApi')
+        if (!threading || typeof threading.run !== 'function')
+            return
+        const original = http && http.sendRequest
+        const sent = []
+        if (typeof original === 'function')
+            http.sendRequest = keepaliveSender(original, sent)
+        try
+        {
+            threading.run()
+            const events = internal('events.GAEvents')
+            if (events && typeof events.processEvents === 'function')
+                events.processEvents('', false)
+        }
+        catch (e)
+        {
+            warn('flush', e)
+        }
+        finally
+        {
+            if (typeof original === 'function')
+                http.sendRequest = original
+        }
+        // The keepalive request owns these rows now; the copy saved in
+        // localStorage would be sent again on the next visit
+        const store = internal('store.GAStore')
+        const kinds = internal('store.EGAStore')
+        const ops = internal('store.EGAStoreArgsOperator')
+        const state = internal('state.GAState')
+        if (!sent.length || !store || !kinds || !ops || !state)
+            return
+        try
+        {
+            for (const id of sent)
+                if (id)
+                    store.delete(kinds.Events, [['status', ops.Equal, id]])
+            store.save(state.getGameKey())
+        }
+        catch (e)
+        {
+            warn('store', e)
+        }
+    }
+
+    function endNow()
+    {
+        if (ended)
+            return
+        if (!live)
+        {
+            ended = ready
+            return
+        }
+        deliver('endSession', [])
+        ended = true
+        flushForUnload()
+    }
+
     return {
         backendId: 'gameanalytics',
 
@@ -139,6 +281,10 @@ var ANALYTICS_BACKEND = (function()
             if (build)
                 deliver('configureBuild', [build])
             deliver('initialize', [keys.gameKey, keys.secretKey])
+            holdUnloadSessionEnd()
+            // After the game's own pagehide handler (watchAnalytics, added
+            // before boot): ends the session if the game did not
+            window.addEventListener('pagehide', endNow)
             waitUntilReady()
         },
 
@@ -146,14 +292,17 @@ var ANALYTICS_BACKEND = (function()
         // end before that is dropped rather than queued
         startSession()
         {
+            if (live && ended)
+                ended = false
             if (live)
                 call('startSession', [])
         },
 
+        // Once per session: runs the queued events, stores session_end and
+        // sends the batch at once (keepalive); later calls are dropped
         endSession()
         {
-            if (live)
-                call('endSession', [])
+            endNow()
         },
 
         // status: 'Start' | 'Complete' | 'Fail' (EGAProgressionStatus)

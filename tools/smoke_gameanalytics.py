@@ -15,10 +15,28 @@ env:* design events (sent before the init answer: they must not be dropped),
 and the game booted on the gameanalytics backend without page errors.
 Sends one real smoke session to the GameAnalytics game.
 
+TASK-899 --quit: instead of ANALYTICS.sessionEnd() the player really leaves:
+the page navigates to about:blank (beforeunload / pagehide / visibility
+hidden as on a real quit), then the same browser context comes back
+(--revisit-seconds), so the SDK can re-send what it stored. The GameAnalytics
+SDK calls made from the leave on (recorded by wrapping
+gameanalytics.GameAnalytics.*) and every GA request with its event ids are
+recorded. Passes only if every design event id and progression event the
+game handed the SDK at pagehide arrives in an /events POST answered 200
+after the leave (in the pagehide request or re-sent on the revisit), no
+design / progression event is added after endSession, nothing is added
+after the SDK stored the session_end, and no quit event arrives twice.
+A keepalive fetch sent at unload outlives its document: DevTools (so
+Playwright) reports it as failed net::ERR_ABORTED although the browser's
+network service still sends it. --quit therefore runs Chromium with a NetLog
+(--log-net-log, temp file, deleted after use) and takes the real HTTP status
+of such a request from the NetLog entry with the same URL and Authorization
+header (row 'status_source': 'netlog'); the header values are never written.
+
 GA_GAME_KEY / GA_SECRET_KEY are read from the environment or
 /root/credentials/grapnelninja/credentials.env only to redact them.
 
-    python3 tools/smoke_gameanalytics.py [--zip ZIP] --out ga-smoke.json
+    python3 tools/smoke_gameanalytics.py [--zip ZIP] [--quit] --out ga-smoke.json
 """
 import argparse
 from contextlib import ExitStack
@@ -27,6 +45,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import gzip
 import json
 from pathlib import Path
+import re
+import shutil
 import sys
 import tempfile
 from threading import Thread
@@ -68,11 +88,96 @@ def env_ok(rows):
                and any(str(c).startswith('design:env:') for c in r.get('categories') or []) for r in rows)
 
 
+# Wraps the SDK's public add*/session calls and the store of the session_end
+# event; each call is logged to the console (the page is about to unload)
+RECORD_SDK = r'''() => {
+    const ga = gameanalytics.GameAnalytics
+    for (const fn of ['addDesignEvent', 'addProgressionEvent', 'addErrorEvent', 'addAdEvent',
+                      'endSession', 'startSession']) {
+        const orig = ga[fn]
+        ga[fn] = function(...a) { console.log('GA-CALL ' + JSON.stringify([fn, a])); return orig.apply(this, a) }
+    }
+    const events = gameanalytics.events.GAEvents, end = events.addSessionEndEvent
+    events.addSessionEndEvent = function(...a) {
+        console.log('GA-CALL ' + JSON.stringify(['<session_end stored>', []])); return end.apply(this, a) }
+}'''
+
+
+def netlog_requests(path):
+    """[{method, url, auth, status}] of the URL requests in a Chromium NetLog file."""
+    data = json.loads(Path(path).read_text())
+    types = {v: k for k, v in data['constants']['logEventTypes'].items()}
+    found = {}
+    for e in data['events']:
+        name, params = types.get(e['type']), e.get('params') or {}
+        row = found.setdefault(e['source']['id'], {})
+        if name == 'URL_REQUEST_START_JOB':  # BEGIN carries the params, END none
+            if params.get('url'):
+                row.update(method=params.get('method'), url=params.get('url'))
+        elif name in ('HTTP_TRANSACTION_SEND_REQUEST_HEADERS', 'HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS',
+                      'HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS'):
+            for h in params.get('headers') or []:
+                if str(h).lower().startswith('authorization:'):
+                    row['auth'] = str(h).split(':', 1)[1].strip()
+        elif name == 'HTTP_TRANSACTION_READ_RESPONSE_HEADERS':
+            heads = params.get('headers') or []
+            m = re.match(r'HTTP/\S+ (\d{3})', str(heads[0])) if heads else None
+            if m:
+                row['status'] = int(m.group(1))
+    return [r for r in found.values() if r.get('url')]
+
+
+def event_id(fn, args):
+    """GA event id of an add*Event call: design 'design:<id>', progression 'progression:Fail:a:b'."""
+    if fn == 'addDesignEvent':
+        return 'design:' + str(args[0])
+    if fn == 'addProgressionEvent':
+        status = {1: 'Start', 2: 'Complete', 3: 'Fail'}.get(args[0], str(args[0]))
+        return 'progression:' + ':'.join([status] + [str(a) for a in args[1:4] if isinstance(a, str) and a])
+    return None
+
+
+def quit_verdict(calls, rows):
+    """calls: [[fn, args]] made from the leave on; rows after the leave."""
+    names = [c[0] for c in calls]
+    end = names.index('endSession') if 'endSession' in names else len(calls)
+    stored = names.index('<session_end stored>') if '<session_end stored>' in names else len(calls)
+    expected = [event_id(fn, a) for fn, a in calls[:end] if event_id(fn, a)]
+    after_end = [event_id(fn, a) for fn, a in calls[end + 1:] if event_id(fn, a)]
+    after_stored = [event_id(fn, a) for fn, a in calls[stored + 1:] if event_id(fn, a)]
+    delivered = [c for r in rows if r['url'].endswith('/events') and r['status'] == 200
+                 for c in r.get('categories') or []]
+    pool = list(delivered)
+    missing = []
+    for e in expected:
+        if e in pool:
+            pool.remove(e)
+        else:
+            missing.append(e)
+    # a quit event the pagehide request delivered and the revisit sent again
+    duplicates = sorted({e for e in expected if delivered.count(e) > expected.count(e)})
+    return {
+        'end_session_called': 'endSession' in names,
+        'session_end_stored': '<session_end stored>' in names,
+        'expected_at_pagehide': expected,
+        'delivered_after_leave_200': delivered,
+        'missing': missing,
+        'added_after_endSession': after_end,
+        'added_after_session_end_stored': after_stored,
+        'delivered_twice': duplicates,
+        'pass': bool(expected) and 'endSession' in names and not missing and not after_end
+        and not after_stored and not duplicates,
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--zip', type=Path, default=DEFAULT_ZIP)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--seconds', type=float, default=20.0)
+    parser.add_argument('--quit', action='store_true', help='real pagehide by navigation, then a revisit')
+    parser.add_argument('--leave-seconds', type=float, default=10.0)
+    parser.add_argument('--revisit-seconds', type=float, default=12.0)
     args = parser.parse_args(argv)
     env = credentials()
     secrets = {name: env[name] for name in ('GA_GAME_KEY', 'GA_SECRET_KEY') if env.get(name)}
@@ -83,6 +188,10 @@ def main(argv=None):
         return text
 
     rows, blocked, page_errors = [], [], []
+    # row index -> (raw url, Authorization) of GA requests DevTools saw fail
+    failed_raw = {}
+    netlog_dir = Path(tempfile.mkdtemp(prefix='ga-netlog-'))
+    netlog = netlog_dir / 'net.json'
     with ExitStack() as stack, tempfile.TemporaryDirectory(prefix='ga-smoke-') as site:
         with zipfile.ZipFile(args.zip) as z:
             z.extractall(site)
@@ -93,17 +202,22 @@ def main(argv=None):
         base = f'http://127.0.0.1:{server.server_port}/'
         playwright = sync_playwright().start()
         stack.callback(playwright.stop)
-        browser = playwright.chromium.launch(args=['--no-sandbox'])
+        launch_args = ['--no-sandbox']
+        if args.quit:
+            launch_args += [f'--log-net-log={netlog}', '--net-log-capture-mode=IncludeSensitive']
+        browser = playwright.chromium.launch(args=launch_args)
         stack.callback(browser.close)
         context = browser.new_context(viewport={'width': 1280, 'height': 720})
 
         def route(r):
             url = r.request.url
-            if url.startswith(base) or is_ga(url):
+            if url.startswith(base):
                 return r.continue_()
             blocked.append(redact(url))
             return r.abort()
-        context.route('**/*', route)
+        # TASK-899: GA requests are not intercepted at all (an intercepted
+        # request dies with its document, a real keepalive one does not)
+        context.route(lambda url: not is_ga(url), route)
         started = time.time()
 
         def categories(request):
@@ -113,7 +227,7 @@ def main(argv=None):
                     body = gzip.decompress(body)
                 events = json.loads(body) if body else None
                 if isinstance(events, list):
-                    return [e.get('category') + (':' + e['event_id'] if e.get('category') == 'design'
+                    return [e.get('category') + (':' + e['event_id'] if e.get('category') in ('design', 'progression')
                                                  and isinstance(e.get('event_id'), str) else '')
                             for e in events if isinstance(e, dict) and isinstance(e.get('category'), str)]
             except Exception as e:  # noqa: BLE001 - evidence only
@@ -123,16 +237,19 @@ def main(argv=None):
         def on_response(response):
             if is_ga(response.url):
                 row = {'t': round(time.time() - started, 2), 'method': response.request.method,
-                       'url': redact(response.url), 'status': response.status}
+                       'url': redact(response.url), 'status': response.status,
+                       'type': response.request.resource_type}
                 if response.url.endswith('/events'):
                     row['categories'] = categories(response.request)
                 rows.append(row)
 
         def on_failed(request):
             if is_ga(request.url):
+                failed_raw[len(rows)] = (request.url, (request.headers or {}).get('authorization'))
                 rows.append({'t': round(time.time() - started, 2), 'method': request.method,
-                             'url': redact(request.url), 'status': None,
-                             'failure': request.failure})
+                             'url': redact(request.url), 'status': None, 'type': request.resource_type,
+                             'failure': request.failure,
+                             'categories': categories(request) if request.url.endswith('/events') else None})
         context.on('response', on_response)
         context.on('requestfailed', on_failed)
         page = context.new_page()
@@ -148,9 +265,44 @@ def main(argv=None):
             page.wait_for_timeout(1000)
             if session_ok(rows) and env_ok(rows):
                 break
-        page.evaluate('() => ANALYTICS.sessionEnd()')
-        page.wait_for_timeout(2000)
+        quit_calls, leave_at = [], None
+        if args.quit:
+            page.on('console', lambda m: quit_calls.append(json.loads(m.text[len('GA-CALL '):]))
+                    if m.text.startswith('GA-CALL ') else None)
+            page.evaluate(RECORD_SDK)
+            page.wait_for_timeout(500)
+            quit_calls.clear()
+            leave_at = len(rows)
+            rows.append({'url': '', 't': round(time.time() - started, 2), 'marker': 'leave (goto about:blank)'})
+            page.goto('about:blank')
+            page.wait_for_timeout(args.leave_seconds * 1000)
+            rows.append({'url': '', 't': round(time.time() - started, 2), 'marker': 'revisit'})
+            page.goto(base + 'index.html')
+            wait_for_boot_run(page)
+            page.wait_for_timeout(args.revisit_seconds * 1000)
+            rows.append({'url': '', 't': round(time.time() - started, 2), 'marker': 'end'})
+        else:
+            page.evaluate('() => ANALYTICS.sessionEnd()')
+            page.wait_for_timeout(2000)
         context.close()
+        browser.close()
+
+    netlog_summary = []
+    if args.quit:
+        logged = netlog_requests(netlog) if netlog.exists() else []
+        auths = {auth for _, auth in failed_raw.values() if auth}
+        netlog_summary = [{'method': r.get('method'), 'events': r['url'].endswith('/events'),
+                           'status': r.get('status'), 'has_auth': bool(r.get('auth')),
+                           'auth_matches_failed_request': r.get('auth') in auths}
+                          for r in logged if is_ga(r['url']) and r.get('method') != 'OPTIONS']
+        for i, (url, auth) in failed_raw.items():
+            hits = [r for r in logged if r.get('method') == 'POST' and r['url'] == url and auth
+                    and r.get('auth') == auth and r.get('status')]
+            if hits:
+                rows[i]['devtools_failure'] = rows[i].pop('failure', None)
+                rows[i]['status'] = hits[-1]['status']
+                rows[i]['status_source'] = 'netlog'
+    shutil.rmtree(netlog_dir, ignore_errors=True)
 
     init = [r for r in rows if '/init' in r['url']]
     events = [r for r in rows if r['url'].endswith('/events')]
@@ -169,11 +321,21 @@ def main(argv=None):
     report['env_events_200'] = env_ok(rows)
     report['pass'] = (report['session_start_events_200'] and report['env_events_200'] and not page_errors
                       and state['backend'] == 'gameanalytics' and state['runInProgress'])
-    text = redact(json.dumps(report, indent=1))
+    if args.quit:
+        report['mode'] = 'quit'
+        report['netlog_ga_requests'] = netlog_summary
+        report['sdk_calls_from_leave'] = quit_calls
+        report['quit'] = quit_verdict(quit_calls, rows[leave_at:])
+        report['pass'] = report['pass'] and report['quit']['pass']
+    text = redact(json.dumps(report, separators=(',', ':')))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(text + '\n')
     print(('PASS' if report['pass'] else 'FAIL') + f': init statuses {report["init_statuses"]}, '
           f'events statuses {report["events_statuses"]}, page errors {len(page_errors)}')
+    if args.quit:
+        q = report['quit']
+        print(f'quit: expected {len(q["expected_at_pagehide"])}, missing {q["missing"]}, '
+              f'after endSession {q["added_after_endSession"]}, after session_end {q["added_after_session_end_stored"]}')
     return 0 if report['pass'] else 1
 
 

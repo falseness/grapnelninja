@@ -18,6 +18,14 @@ record their arguments):
 - an SDK that answers its init late (the real one does, one round trip after
   initialize): boot events (env:*, the run's progression Start) wait and go out
   in order after the answer; startSession is not replayed.
+- TASK-899 pagehide flush ('threaded' mock: the real SDK's GA-thread task
+  queue, store, processEvents and GAHTTPApi.sendRequest internals): the SDK's
+  own beforeunload session end is held; at pagehide the queued add* tasks run
+  at once, then session_end, and the batch goes out in ONE fetch(keepalive)
+  /events POST (Authorization = the SDK's HMAC, no XHR) carrying every event
+  the game handed the SDK, session_end last; the sent rows leave the saved
+  store; nothing reaches the SDK after endSession; a second pagehide sends
+  nothing.
 - static: the itch zip loads the SDK + gameanalytics.js instead of none.js
   and ships the SDK unmodified with its licence; the y8 zip ships the same
   SDK and keys; the dev index.html and the gamepix / playgama zips stay on
@@ -56,6 +64,7 @@ VIEWPORT = {'width': 1280, 'height': 720}
 # not recorded): not ready until window.__gaAnswer() plays the init answer.
 MOCK_SDK = r'''
 (function(scope) {
+    const GameAnalyticsNs = {}
     const calls = []
     const mode = scope.__GA_MOCK_MODE || 'record'
     const names = ['configureBuild', 'initialize', 'startSession', 'endSession', 'addProgressionEvent',
@@ -75,6 +84,66 @@ MOCK_SDK = r'''
         GameAnalytics.addRemoteConfigsListener = l => listeners.push(l)
         scope.__gaAnswer = () => { answered = true; for (const l of listeners) l.onRemoteConfigsUpdated() }
     }
+    if (mode === 'threaded') {
+        // The SDK's internals the backend's pagehide flush uses (shapes as in 5.0.0):
+        // add*/endSession only queue a GA-thread task; nothing runs them by itself here
+        const queue = [], rows = [], xhr = [], ran = []
+        let session = true, batch = 0
+        const ns = {}
+        const toRow = (name, args) => name === 'addDesignEvent' ? 'design:' + args[0]
+            : name === 'addProgressionEvent' ? 'progression:' + args.slice(0, 3).join(':') : name
+        for (const name of ['addDesignEvent', 'addProgressionEvent', 'addErrorEvent', 'addAdEvent']) {
+            const record = GameAnalytics[name]
+            GameAnalytics[name] = function(...args) {
+                record(...args)
+                queue.push(() => { ran.push(toRow(name, args)); rows.push({status: 'new', event: toRow(name, args)}) })
+            }
+        }
+        const recordEnd = GameAnalytics.endSession
+        GameAnalytics.endSession = function(...args) {
+            recordEnd(...args)
+            queue.push(() => ns.threading.GAThreading.endSessionAndStopQueue())
+        }
+        ns.threading = {GAThreading: {
+            taskQueue: queue,
+            run() { while (queue.length) queue.shift()() },
+            endSessionAndStopQueue() {
+                if (!session) return
+                session = false
+                ran.push('session_end')
+                rows.push({status: 'new', event: 'session_end'})
+                ns.events.GAEvents.processEvents('', false)
+            },
+        }}
+        ns.events = {GAEvents: {processEvents() {
+            const fresh = rows.filter(r => r.status === 'new')
+            if (!fresh.length) return
+            const id = 'batch' + (++batch)
+            for (const r of fresh) r.status = id
+            const json = JSON.stringify(fresh.map(r => r.event))
+            ns.http.GAHTTPApi.sendRequest('https://api.gameanalytics.com/v2/key/events', json,
+                [json, id, String(fresh.length)], false, (x, url, done, extra) => {
+                    ran.push('answer:' + x.status + ':' + extra[2])
+                    for (let i = rows.length - 1; i >= 0; i--) if (rows[i].status === extra[2]) rows.splice(i, 1)
+                }, null)
+        }}}
+        ns.http = {GAHTTPApi: {sendRequest(url) { xhr.push(url) }}}
+        ns.state = {GAState: {instance: {isUnloading: false}, getGameSecret: () => 'secret', getGameKey: () => 'key'}}
+        ns.utilities = {GAUtilities: {getHmac: (key, body) => 'hmac:' + key + ':' + body.length}}
+        ns.store = {GAStore: {
+            delete(kind, where) { for (let i = rows.length - 1; i >= 0; i--)
+                if (where.every(([k, op, v]) => op === 0 && rows[i][k] === v)) rows.splice(i, 1) },
+            save(key) { scope.__gaSaved = {key, rows: JSON.parse(JSON.stringify(rows))} },
+        }, EGAStore: {Events: 0, Sessions: 1, Progression: 2}, EGAStoreArgsOperator: {Equal: 0, LessOrEqual: 1, NotEqual: 2}}
+        scope.__gaThreaded = {queue, rows, xhr, ran}
+        scope.__gaFetch = []
+        scope.fetch = (url, init) => {
+            scope.__gaFetch.push({url, keepalive: init.keepalive, method: init.method,
+                auth: init.headers.Authorization, body: init.body})
+            return Promise.resolve({status: 200, statusText: 'OK', text: () => Promise.resolve('{}')})
+        }
+        Object.assign(GameAnalyticsNs, ns)
+    }
     scope.gameanalytics = {
         GameAnalytics,
         EGAErrorSeverity: {Undefined: 0, Debug: 1, Info: 2, Warning: 3, Error: 4, Critical: 5},
@@ -82,6 +151,7 @@ MOCK_SDK = r'''
         EGAAdAction: {Undefined: 0, Clicked: 1, Show: 2, FailedShow: 3, RewardReceived: 4},
         EGAAdType: {Undefined: 0, Video: 1, RewardedVideo: 2, Playable: 3, Interstitial: 4,
                     OfferWall: 5, Banner: 6},
+        ...GameAnalyticsNs,
     }
     scope.__gaCalls = calls
 })(this)
@@ -327,6 +397,53 @@ class GameAnalyticsBackendTest(unittest.TestCase):
         self.assert_running(page, errors)
         self.evidence['cases']['deferred_init'] = {'before_answer': before, 'delivered_after': names,
                                                    'env_events': env, 'pass': True}
+
+    def test_08_pagehide_flush_sends_quit_events_by_keepalive(self):
+        page, errors = self.boot(mode='threaded')
+        mark = len(self.calls(page))
+        # The SDK's beforeunload handler (isUnloading) must not end the session first
+        held = page.evaluate('''() => { const g = gameanalytics, st = g.state.GAState.instance
+            st.isUnloading = true; g.threading.GAThreading.endSessionAndStopQueue(); st.isUnloading = false
+            return __gaThreaded.ran.includes('session_end') }''')
+        self.assertFalse(held, 'the SDK beforeunload session end was not held')
+        self.assertEqual(page.evaluate('() => __gaFetch.length'), 0)
+        page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false}))")
+        page.wait_for_timeout(200)
+        calls = self.calls(page)[mark:]
+        names = [c[0] for c in calls]
+        self.assertIn('endSession', names)
+        end = names.index('endSession')
+        handed = [('design:' + c[1][0]) if c[0] == 'addDesignEvent' else 'progression:' + ':'.join(map(str, c[1][:3]))
+                  for c in calls[:end] if c[0] in ('addDesignEvent', 'addProgressionEvent')]
+        self.assertTrue(any(h.startswith('design:quit:') for h in handed), handed)
+        self.assertTrue(any(h.startswith('progression:3:') for h in handed), handed)
+        self.assertEqual(calls[end + 1:], [], 'calls reached GameAnalytics after endSession')
+        state = page.evaluate('() => ({fetch: __gaFetch, xhr: __gaThreaded.xhr, queue: __gaThreaded.queue.length, '
+                              'ran: __gaThreaded.ran, rows: __gaThreaded.rows, saved: window.__gaSaved})')
+        self.assertEqual(state['queue'], 0, 'GA-thread tasks were left queued')
+        self.assertEqual(state['xhr'], [], 'the unload batch went out by XHR')
+        self.assertEqual(len(state['fetch']), 1)
+        sent = state['fetch'][0]
+        body = json.loads(sent['body'])
+        self.assertTrue(sent['keepalive'])
+        self.assertEqual(sent['method'], 'POST')
+        self.assertTrue(sent['url'].endswith('/events'))
+        self.assertEqual(sent['auth'], 'hmac:secret:%d' % len(sent['body']))
+        self.assertEqual(body[-1], 'session_end')
+        for h in handed:
+            self.assertIn(h, body)
+        self.assertEqual(state['rows'], [], 'sent rows stayed in the store')
+        self.assertEqual(state['saved'], {'key': 'key', 'rows': []})
+        self.assertIn('answer:200:batch1', state['ran'])
+        # Later facade calls (the visibility auto-pause, ...) and a second pagehide send nothing
+        page.evaluate("() => { ANALYTICS.design('ui:pause:open:auto'); ANALYTICS.progression('Fail', 'x'); "
+                      "window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false})) }")
+        page.wait_for_timeout(200)
+        self.assertEqual(self.calls(page)[mark + end + 1:], [])
+        self.assertEqual(page.evaluate('() => __gaFetch.length'), 1)
+        self.assertEqual(errors['page'], [])
+        self.evidence['cases']['pagehide_flush'] = {'handed_at_pagehide': handed, 'keepalive_body': body,
+                                                    'xhr': state['xhr'], 'pass': True}
 
 
 if __name__ == '__main__':
