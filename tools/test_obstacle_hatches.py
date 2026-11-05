@@ -87,6 +87,10 @@ VECTOR = r'''() => {
     const c=document.createElement('canvas');c.width=512;c.height=384;
     const context=c.getContext('2d'), variants=['bold','thin','cross','chevron'];
     let patterns=0,tiles=0,lines=0;
+    // TASK-889: draw() ends by running one queued background bake (the dither bake calls
+    // createPattern), so drain the boot's leftover bakes first; the counted draws below must
+    // then see hatches add no pattern and no canvas.
+    for(let i=0;i<500 && typeof backgroundBakesPending==='function' && backgroundBakesPending();i++)draw();
     const cp=CanvasRenderingContext2D.prototype.createPattern,ce=document.createElement,lt=Path2D.prototype.lineTo;
     CanvasRenderingContext2D.prototype.createPattern=function(...a){patterns++;return cp.apply(this,a)};
     document.createElement=function(...a){if(a[0]==='canvas')tiles++;return ce.apply(this,a)};
