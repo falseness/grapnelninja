@@ -75,7 +75,7 @@ const GAMEPLAY = Object.freeze({
     grapnelThrowHeightPercent: 20,
     grapplePullHeightPercent: 0.025188916876574307,
     // Grapple Over pulls this much harder than classic/bad (more swing speed)
-    grappleOverPullScale: 1.5,
+    grappleOverPullScale: 2.0,
     triangleSpeedHeightPercent: 0.5,
     ninjaMaxSpeedHeightPercent: 2,
     cornerToleranceHeightPercent: 100 * 6 / 1080,
