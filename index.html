@@ -93,6 +93,17 @@
                 /* Over the (contained) poster: no veil, the text in the sky band below the art */
                 #poster ~ #rotate-prompt { background: transparent; align-items: flex-end; padding-bottom: 12vh; }
             }
+            /* The same for a phone that reports a fine pointer (gameoptions.js touchPhoneScreen) */
+            @media (orientation: portrait) {
+                html.touch-phone #stage { visibility: hidden; }
+                html.touch-phone #rotate-prompt {
+                    position: fixed; inset: 0; z-index: 2; display: flex;
+                    align-items: center; justify-content: center;
+                    box-sizing: border-box; padding: 32px; text-align: center;
+                    background: #080322; color: #bfffff; font: 24px/1.5 sans-serif;
+                }
+                html.touch-phone #poster ~ #rotate-prompt { background: transparent; align-items: flex-end; padding-bottom: 12vh; }
+            }
             #loading-title
             {
                 font-size: 48px;

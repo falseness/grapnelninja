@@ -11,9 +11,18 @@ const maxViewportAspect = 2
 // MediaQueryList stays live when the primary pointer changes. Reuse it rather
 // than allocating a new query in every bloom frame and coordinate conversion.
 const coarsePointerQuery = window.matchMedia ? window.matchMedia('(pointer: coarse)') : null
+// A phone whose browser reports a fine primary pointer (some in-app browsers,
+// "Desktop site"): touch points and a phone-sized screen (short side at most
+// PHONE_SCREEN_MAX_CSS_PX). Without this it got the desktop 2:1 cap
+// (letterbox stripes on a 2.2:1+ landscape phone) and no rotation.
+const PHONE_SCREEN_MAX_CSS_PX = 600
+const touchPhoneScreen = typeof navigator != 'undefined' && navigator.maxTouchPoints > 0 &&
+    typeof screen != 'undefined' && Math.min(screen.width, screen.height) <= PHONE_SCREEN_MAX_CSS_PX
+if (touchPhoneScreen && document.documentElement)
+    document.documentElement.classList.add('touch-phone')
 function isTouchFirstDevice()
 {
-    return !!(coarsePointerQuery && coarsePointerQuery.matches)
+    return !!(coarsePointerQuery && coarsePointerQuery.matches) || touchPhoneScreen
 }
 // A phone held upright plays in landscape: the stage (the game canvas and
 // the letterbox bars) is turned 90 degrees clockwise.
