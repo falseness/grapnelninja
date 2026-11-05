@@ -31,6 +31,11 @@
 // sends the same way without ending the session.
 // Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
 var GA_KEYS = {gameKey: '', secretKey: ''}
+// The GameAnalytics collector is reached through a first-party relay
+// (deploy/ga-relay: Caddy on stats.playdiplomacy.online forwarding to
+// api.gameanalytics.com), because ad-block lists (EasyPrivacy
+// ||gameanalytics.com^$third-party) block the SDK's own host. '' = direct.
+var GA_COLLECTOR_HOST = 'stats.playdiplomacy.online'
 
 var ANALYTICS_BACKEND = (function()
 {
@@ -145,6 +150,20 @@ var ANALYTICS_BACKEND = (function()
         for (const key of path.split('.'))
             node = node && node[key]
         return node || null
+    }
+
+    // Points the SDK's HTTP API (init, events, remote configs) at
+    // GA_COLLECTOR_HOST; the SDK builds every URL from these two bases
+    function useCollectorHost()
+    {
+        const host = typeof GA_COLLECTOR_HOST === 'string' ? GA_COLLECTOR_HOST : ''
+        const api = internal('http.GAHTTPApi')
+        const http = api && api.instance
+        if (!host || !http || typeof http.hostName !== 'string')
+            return
+        http.hostName = host
+        http.baseUrl = http.protocol + '://' + host + '/' + http.version
+        http.remoteConfigsBaseUrl = http.protocol + '://' + host + '/remote_configs/' + http.remoteConfigsVersion
     }
 
     // The SDK's beforeunload handler ends the session (storing session_end)
@@ -315,6 +334,7 @@ var ANALYTICS_BACKEND = (function()
             ready = true
             if (build)
                 deliver('configureBuild', [build])
+            useCollectorHost()
             deliver('initialize', [keys.gameKey, keys.secretKey])
             holdUnloadSessionEnd()
             // After the game's own pagehide handler (watchAnalytics, added
