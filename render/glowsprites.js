@@ -200,7 +200,8 @@ const GRADIENT_DITHER = (function()
 // far crystals, ridges or landmarks, nor a cheap layer swapped later.
 const BACKGROUND_BAKE_QUEUE =
 {
-    // True while #poster hides the stage (index.html removePoster clears it)
+    // Boot mode: true until every on-screen layer has its exact bake
+    // (index.html endBootBakes); the poster itself goes after the first frame
     hidden: typeof document != 'undefined' && !!document.getElementById('poster'),
     // {owner, name, key, build, done}: build() stores {key, ...} on owner[name]
     // (or what done() checks) and returns its canvas (or a layer tile:
@@ -242,15 +243,8 @@ function buildPendingBackgroundBakes()
     const queue = BACKGROUND_BAKE_QUEUE
     if (queue.queuedFrame === drawFrameId)
         return false
-    // Under the poster nobody sees the frame: every on-screen job at once
-    // (the off-screen parallax bands keep coming one per frame)
-    if (queue.hidden)
-    {
-        let ran = false
-        while ((queue.jobs.length || GRAPPLE_OVER_PARALLAX_TILES.cheap.length) && buildOnePendingBackgroundBake())
-            ran = true
-        return ran || buildOnePendingBackgroundBake()
-    }
+    // One per frame, also at boot: the game is already playable on the cheap
+    // layers, and index.html crossfades each upgrade (BOOT_FADE)
     return buildOnePendingBackgroundBake()
 }
 

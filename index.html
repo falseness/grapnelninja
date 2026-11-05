@@ -722,27 +722,74 @@
                 // Live frames draw new HUD glyph glow once it is built (render/glowsprites.js)
                 // Nothing pending before and after the frame: it drew every layer
                 // exact and with its glow (the frame that builds them drew them cheap)
-                const completeBefore = BACKGROUND_BAKE_QUEUE.hidden && bootPictureComplete()
+                const boot = BACKGROUND_BAKE_QUEUE.hidden
+                const completeBefore = boot && bootPictureComplete()
+                const signature = boot ? bootBakeSignature() : ''
                 GLYPH_GLOW_QUEUE.defer = true
                 try { gameLoopFrame(frameTime) }
                 finally { GLYPH_GLOW_QUEUE.defer = false }
-                // The poster goes before the paint of the first complete frame
-                if (BACKGROUND_BAKE_QUEUE.hidden &&
-                    ((completeBefore && bootPictureComplete()) || ++posterFrames >= POSTER_MAX_FRAMES))
-                    removePoster()
+                // Instant start: the poster goes after the first frame (cheap
+                // layers); the exact ones are built one per frame and fade in
+                removePoster()
+                drawBootFade(frameTime)
+                if (boot)
+                {
+                    // This frame built something: the next one looks different,
+                    // so it fades in over this frame's picture
+                    if (bootBakeSignature() !== signature)
+                        startBootFade(frameTime)
+                    if ((completeBefore && bootPictureComplete()) || ++posterFrames >= POSTER_MAX_FRAMES)
+                        BACKGROUND_BAKE_QUEUE.hidden = false
+                }
                 game = requestAnimationFrame(gameLoop)
             }
-            // TASK-892: the static poster of index.html (#poster). Kept over the
-            // stage while the boot frames build their deferred caches
-            // (render/glowsprites.js BACKGROUND_BAKE_QUEUE), at most
-            // POSTER_MAX_FRAMES game frames
+            // TASK-892: the static poster of index.html (#poster), removed after
+            // the first game frame. Boot mode (render/glowsprites.js
+            // BACKGROUND_BAKE_QUEUE.hidden) lasts until the exact layers are
+            // built, at most POSTER_MAX_FRAMES game frames
             const POSTER_MAX_FRAMES = 240
             let posterFrames = 0
             function removePoster()
             {
-                BACKGROUND_BAKE_QUEUE.hidden = false
                 const poster = document.getElementById('poster')
                 if (poster) poster.remove()
+            }
+            // Boot crossfade: a copy of the last cheap picture drawn over the
+            // new frames, fading out over BOOT_FADE.ms
+            const BOOT_FADE = {canvas: null, start: -1, ms: 400}
+            function bootBakeSignature()
+            {
+                return BACKGROUND_BAKE_QUEUE.built + '|' + BACKGROUND_BAKE_QUEUE.jobs.length + '|' +
+                    GRAPPLE_OVER_PARALLAX_TILES.cheap.length + '|' + GLYPH_SPRITES.cache.size
+            }
+            function startBootFade(now)
+            {
+                const copy = BOOT_FADE.canvas || (BOOT_FADE.canvas = document.createElement('canvas'))
+                if (copy.width !== canvas.width || copy.height !== canvas.height)
+                {
+                    copy.width = canvas.width
+                    copy.height = canvas.height
+                }
+                const c = copy.getContext('2d')
+                c.globalAlpha = 1
+                c.drawImage(canvas, 0, 0)
+                BOOT_FADE.start = now
+            }
+            function drawBootFade(now)
+            {
+                if (BOOT_FADE.start < 0 || !BOOT_FADE.canvas)
+                    return
+                const t = (now - BOOT_FADE.start) / BOOT_FADE.ms
+                if (t >= 1 || BOOT_FADE.canvas.width !== canvas.width || BOOT_FADE.canvas.height !== canvas.height)
+                {
+                    BOOT_FADE.start = -1
+                    return
+                }
+                ctx.save()
+                ctx.setTransform(1, 0, 0, 1, 0, 0)
+                ctx.globalAlpha = 1 - t
+                ctx.drawImage(BOOT_FADE.canvas, 0, 0)
+                ctx.restore()
             }
 
             function gameLoopFrame(frameTime)
