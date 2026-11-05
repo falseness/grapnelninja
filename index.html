@@ -709,16 +709,27 @@
             function gameLoop(frameTime)
             {
                 // Live frames draw new HUD glyph glow once it is built (render/glowsprites.js)
+                // Nothing pending before and after the frame: it drew every layer
+                // exact and with its glow (the frame that builds them drew them cheap)
+                const completeBefore = BACKGROUND_BAKE_QUEUE.hidden && bootPictureComplete()
                 GLYPH_GLOW_QUEUE.defer = true
                 try { gameLoopFrame(frameTime) }
                 finally { GLYPH_GLOW_QUEUE.defer = false }
-                // The first frame is on the canvas: the poster goes before its paint
-                removePoster()
+                // The poster goes before the paint of the first complete frame
+                if (BACKGROUND_BAKE_QUEUE.hidden &&
+                    ((completeBefore && bootPictureComplete()) || ++posterFrames >= POSTER_MAX_FRAMES))
+                    removePoster()
                 game = requestAnimationFrame(gameLoop)
             }
-            // TASK-892: the static poster of index.html (#poster)
+            // TASK-892: the static poster of index.html (#poster). Kept over the
+            // stage while the boot frames build their deferred caches
+            // (render/glowsprites.js BACKGROUND_BAKE_QUEUE), at most
+            // POSTER_MAX_FRAMES game frames
+            const POSTER_MAX_FRAMES = 240
+            let posterFrames = 0
             function removePoster()
             {
+                BACKGROUND_BAKE_QUEUE.hidden = false
                 const poster = document.getElementById('poster')
                 if (poster) poster.remove()
             }

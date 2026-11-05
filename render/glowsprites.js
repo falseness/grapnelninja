@@ -191,10 +191,17 @@ const GRADIENT_DITHER = (function()
 // change builds are painted cheap (8-bit) and rebuilt exact (render/parallax.js). From the next
 // frame on, the end of draw() builds one queued job per frame
 // (buildPendingBackgroundBakes); the frame after a bake lands draws it. Any
-// other draw builds what it draws, as before. A resize or DPR change makes
-// new keys: the same rule applies.
+// other draw builds what it draws, as before.
+// Only while the boot poster (index.html #poster) still covers the stage
+// (hidden): those cheap or missing layers are never seen, the second frame
+// builds all of them (and every queued glyph glow) and the poster goes once nothing on screen is
+// pending (bootPictureComplete). After that a live frame builds what it draws,
+// as before TASK-889: a resize or DPR change never shows a frame without its
+// far crystals, ridges or landmarks, nor a cheap layer swapped later.
 const BACKGROUND_BAKE_QUEUE =
 {
+    // True while #poster hides the stage (index.html removePoster clears it)
+    hidden: typeof document != 'undefined' && !!document.getElementById('poster'),
     // {owner, name, key, build, done}: build() stores {key, ...} on owner[name]
     // (or what done() checks) and returns its canvas (or a layer tile:
     // {strips: [{canvas}]})
@@ -212,7 +219,7 @@ const BACKGROUND_BAKE_QUEUE =
 // job already built by another draw (default: owner[name].key is key).
 function deferBackgroundBake(owner, name, key, build, done)
 {
-    if (!GLYPH_GLOW_QUEUE.defer || !GRADIENT_DITHER.enabled)
+    if (!GLYPH_GLOW_QUEUE.defer || !GRADIENT_DITHER.enabled || !BACKGROUND_BAKE_QUEUE.hidden)
         return false
     const queue = BACKGROUND_BAKE_QUEUE
     if (!queue.jobs.some(job => job.owner === owner && job.name === name && job.key === key))
@@ -235,6 +242,29 @@ function buildPendingBackgroundBakes()
     const queue = BACKGROUND_BAKE_QUEUE
     if (queue.queuedFrame === drawFrameId)
         return false
+    // Under the poster nobody sees the frame: every on-screen job at once
+    // (the off-screen parallax bands keep coming one per frame)
+    if (queue.hidden)
+    {
+        let ran = false
+        while ((queue.jobs.length || GRAPPLE_OVER_PARALLAX_TILES.cheap.length) && buildOnePendingBackgroundBake())
+            ran = true
+        return ran || buildOnePendingBackgroundBake()
+    }
+    return buildOnePendingBackgroundBake()
+}
+
+// True when no layer on screen waits for its bake or glyph glow: the stage
+// shows the same picture as with every cache built (index.html removePoster)
+function bootPictureComplete()
+{
+    return !BACKGROUND_BAKE_QUEUE.jobs.length && !GRAPPLE_OVER_PARALLAX_TILES.cheap.length &&
+        !GLYPH_GLOW_QUEUE.pending.size
+}
+
+function buildOnePendingBackgroundBake()
+{
+    const queue = BACKGROUND_BAKE_QUEUE
     // On-screen parallax tiles the boot frame painted cheap come first
     if (rebuildCheapParallaxTile())
         return true

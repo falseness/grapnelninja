@@ -114,7 +114,8 @@ function buildPendingParallaxTileAt(layer, band, why)
     store.pending.splice(i, 1)
     const pixelScale = store.scale
     const key = 'parallax|' + layer.name + '|' + band + '|' + pixelScale
-    const cheap = why === 'initial' && GRADIENT_DITHER.enabled
+    // Cheap only under the boot poster (BACKGROUND_BAKE_QUEUE.hidden): never a visible swap
+    const cheap = why === 'initial' && GRADIENT_DITHER.enabled && BACKGROUND_BAKE_QUEUE.hidden
     const tile = buildGrappleOverParallaxTile(layer, band, pixelScale,
         () =>
         {

@@ -1,5 +1,7 @@
 """Static poster check (TASK-892): index.html's #poster (art/poster.webp) is up from the first HTML
-paint and gone in every frame after the first gameLoop frame.
+paint and gone, for good, within a few frames after the first gameLoop frame: index.html keeps it
+until a frame is drawn with no background bake or glyph glow pending (render/glowsprites.js
+bootPictureComplete), so the player never sees a layer pop in.
 
 For every SCREEN MATRIX size (tools/boot_timing.py, 13 sizes; --sizes to narrow) the game is booted
 from a source tree (default the repo root, --root) or a release zip (--zip) on a local server. An
@@ -10,8 +12,8 @@ the poster is still in the document. The level script (leveldata.js, loaded by t
 is held (its <script> append delayed, shot sizes only) until the "dcl" screenshot is
 taken, so the shot shows the page as it stands at DCL.
 
-Pass per size: visible + decoded at DCL, the poster was present when the first gameLoop frame began
-and gone when it ended, it is absent in all >= --frames later frames, the window centre hit-tests
+Pass per size: visible + decoded at DCL, the poster was present when the first gameLoop frame began,
+it is gone within REMOVE_WITHIN_FRAMES later frames and never back in >= --frames later frames, the window centre hit-tests
 through it (pointer-events: none), the run reached ready (bootComplete, runInProgress) and the
 platform's game_ready went out, and no page errors.
 
@@ -38,8 +40,11 @@ POSTER_MAX_BYTES = 80 * 1024
 FRAMES_AFTER = 30
 SHOT_SIZES = ['desktop-1366x768@1', 'pixel7-portrait', 'iphone13-landscape']
 
+# Frames after the first gameLoop frame the poster may stay up (it waits for a complete frame)
+REMOVE_WITHIN_FRAMES = 10
+
 INIT_SCRIPT = r'''(() => {
-    const m = window.__poster = {dcl: null, start: null, end: null, framesAfter: 0, presentAfter: 0,
+    const m = window.__poster = {dcl: null, start: null, end: null, framesAfter: 0, presentAfter: 0, backAfterGone: false, gone: false,
         visibleAfter: 0, gameReady: false}
     const visible = el => !!el && el.isConnected &&
         (el.checkVisibility ? el.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})
@@ -95,6 +100,8 @@ INIT_SCRIPT = r'''(() => {
                 const s = document.getElementById('poster')
                 m.framesAfter++
                 if (s) m.presentAfter++
+                if (s && m.gone) m.backAfterGone = true
+                if (!s) m.gone = true
                 if (s && visible(s)) m.visibleAfter++
             }
         }
@@ -135,7 +142,7 @@ def check_size(browsers, name, shots_dir=None, shoot=False, frames=FRAMES_AFTER)
         m = page.evaluate('window.__poster')
         row.update({'first_frame_start': m['start'], 'first_frame_end': m['end'],
                     'frames_after': m['framesAfter'], 'present_after': m['presentAfter'],
-                    'visible_after': m['visibleAfter']})
+                    'visible_after': m['visibleAfter'], 'back_after_gone': m['backAfterGone']})
         row['ready'] = page.evaluate(AFTER_INIT_JS)
         page.wait_for_function('() => window.__poster.gameReady', timeout=30000)
         row['game_ready'] = page.evaluate('window.__poster.gameReady')
@@ -154,8 +161,9 @@ def check_size(browsers, name, shots_dir=None, shoot=False, frames=FRAMES_AFTER)
         'decoded_at_dcl': bool(d.get('decoded')),
         'input_passes_through': d.get('pointerEvents') == 'none' and not d.get('hitsPoster'),
         'present_at_first_frame_start': bool(s.get('present')),
-        'removed_by_first_frame_end': e.get('present') is False,
-        'absent_in_all_later_frames': row.get('frames_after', 0) >= frames and row.get('present_after') == 0,
+        'removed_within_frames': (row.get('present_after') or 0) <= REMOVE_WITHIN_FRAMES,
+        'gone_for_good': (row.get('frames_after', 0) >= frames and not row.get('back_after_gone', True) and
+                          (row.get('present_after') or 0) < row.get('frames_after', 0)),
         'run_ready': bool((row.get('ready') or {}).get('runReady')),
         'game_ready': row.get('game_ready') is True,
         'no_errors': not errors and 'exception' not in row,
