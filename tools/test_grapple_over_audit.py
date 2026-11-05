@@ -45,8 +45,15 @@ def tested_hashes():
     return dict(sorted(result.items()))
 
 
-def git(*args):
-    return subprocess.check_output(['git', *args], cwd=ROOT, text=True)
+def git(*args, cwd=ROOT):
+    return subprocess.check_output(['git', *args], cwd=cwd, text=True)
+
+
+def scope_added_or_modified(cwd=ROOT):
+    """Paths under artifacts/ or screenshots/ that a commit since TASK-444 added, modified, renamed or copied. Deletions are
+    allowed: TASK-896 (6b0054f, f84e5ee) untracked the 38 legacy TASK-001..017 screenshots/ files on purpose."""
+    return git('log', '--format=', '--name-only', '--diff-filter=AMRC', FIRST_SCOPE_COMMIT + '^..HEAD', '--',
+               'artifacts', 'screenshots', cwd=cwd).split()
 
 
 class Task500Tests(unittest.TestCase):
@@ -115,12 +122,13 @@ class Task500Tests(unittest.TestCase):
         self.assertEqual(forbidden, [])
         ignored = subprocess.run(['git', 'check-ignore', 'artifacts/TASK-500/x', 'screenshots/x'], cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(ignored.returncode, 0)
-        # No tracked evidence, and no commit since TASK-444 touched artifacts/ or screenshots/. 38 screenshots/ files committed by
-        # TASK-001..017 (June, before the ignore rule) remain tracked; they predate this scope and are reported, not removed.
+        # No tracked evidence, and no commit since TASK-444 added or modified anything under artifacts/ or screenshots/. The 38
+        # screenshots/ files committed by TASK-001..017 (June, before the ignore rule) were untracked by TASK-896; deletions pass.
         tracked = git('ls-files', 'artifacts').split()
         self.assertEqual(tracked, [])
         legacy_screenshots = git('ls-files', 'screenshots').split()
-        scope_touched = git('log', '--format=', '--name-only', FIRST_SCOPE_COMMIT + '^..HEAD', '--', 'artifacts', 'screenshots').split()
+        self.assertEqual(legacy_screenshots, [])
+        scope_touched = scope_added_or_modified()
         self.assertEqual(scope_touched, [])
         legacy_added = git('log', '--format=%h %s', '--diff-filter=A', FIRST_SCOPE_COMMIT + '^..HEAD', '--', 'screenshots').split()
         self.assertEqual(legacy_added, [])
@@ -143,13 +151,14 @@ class Task500Tests(unittest.TestCase):
             'recovery routes': (all(r['status'] == 'built' for r in live['live']['recoveries']), ['parts/runtime.json']),
             'startup': (live['live']['boot']['mode'] == 'grapple_over', ['parts/runtime.json']),
             'no checkpoints': (delivery['checkpoints'] == 0, ['parts/runtime.json']),
-            'evidence untracked and nothing staged': (forbidden == [] and tracked == [] and scope_touched == [], ['commands.log', 'audit.json']),
+            'evidence untracked and nothing staged': (forbidden == [] and tracked == [] and legacy_screenshots == [] and scope_touched == [],
+                                                      ['commands.log', 'audit.json']),
         }
         audit = dict(revision=self.revision, scope='TASK-500 runtime delivery and repository hygiene (TASK-840 scope)',
             requirements={k: dict(passed=bool(v[0]), artifacts=v[1]) for k, v in requirements.items()},
-            staged=staged, status_short=status, tracked_artifacts=tracked, scope_commits_touching_artifacts_or_screenshots=scope_touched,
+            staged=staged, status_short=status, tracked_artifacts=tracked, scope_commits_adding_or_modifying_artifacts_or_screenshots=scope_touched,
             legacy_tracked_screenshots=dict(count=len(legacy_screenshots), files=legacy_screenshots,
-                note='committed by TASK-001..017 before the ignore rule; outside TASK-444..500; left for the user to untrack'),
+                note='committed by TASK-001..017 before the ignore rule; untracked by TASK-896 (kept on disk, gitignored)'),
             failed=[k for k, v in requirements.items() if not v[0]])
         audit['passed'] = audit['failed'] == []
         self.evidence.write('audit.json', audit)
