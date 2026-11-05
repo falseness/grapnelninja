@@ -23,7 +23,7 @@ sys.path.insert(0, str(TOOLS))
 
 import check_level_geometry as geometry  # noqa: E402
 from check_level_geometry import (COORD_TOL, GAMEPLAY_ROLES, MIN_SIDE_LENGTH, NO_GRAPPLE_INTERNAL_GAP,  # noqa: E402
-                                  check, check_sides)
+                                  apply_green_min_side, check, check_sides, load_level)
 
 CHECKER = TOOLS / 'check_level_geometry.py'
 FIXTURES = TOOLS / 'fixtures' / 'min-sides'
@@ -163,6 +163,62 @@ class BoundaryTests(unittest.TestCase):
         self.assertTrue(check_sides(level([element('A', rect(5400, 2700), 'no-grapple')]))['summary']['pass'])
 
 
+class GreenMinSideTests(unittest.TestCase):
+    """--green-min-side (TASK-911): only role 'bounce' sides must reach 1 R = 540."""
+
+    def green(self, elements, minimum=540.0):
+        return apply_green_min_side(check_sides(level(elements)), level(elements), minimum)
+
+    def test_green_539_fails(self):
+        rep = self.green([element('G', rect(1200, 539))])
+        s = rep['summary']
+        self.assertFalse(s['pass'])
+        self.assertEqual(s['greenSideViolationCount'], 2)
+        self.assertEqual(s['greenSideViolationElements'], 1)
+        self.assertEqual([(v['element'], v['edge']) for v in s['greenSideViolations']], [('G', 1), ('G', 3)])
+        for v in s['greenSideViolations']:
+            self.assertAlmostEqual(v['length'], 539, places=6)
+        self.assertAlmostEqual(s['minGreenSide'], 539, places=6)
+        self.assertIn('G edge 1 (bounce): green side length 539.000000 < 540', rep['failureMessages'])
+
+    def test_green_541_passes(self):
+        s = self.green([element('G', rect(1200, 541))])['summary']
+        self.assertTrue(s['pass'])
+        self.assertEqual((s['greenSideViolationCount'], s['greenSideViolations']), (0, []))
+        self.assertAlmostEqual(s['minGreenSide'], 541, places=6)
+        self.assertEqual(s['greenSideEdges'], 4)
+
+    def test_tolerance(self):
+        for short, ok in ((540 - 0.009, True), (540 - 0.011, False)):
+            with self.subTest(short=short):
+                self.assertEqual(self.green([element('G', rect(1200, short))])['summary']['pass'], ok)
+
+    def test_yellow_300_does_not_count(self):
+        rep = self.green([element('G', rect(1200, 541)), element('Y', rect(1600, 300), 'drag')])
+        s = rep['summary']
+        self.assertTrue(s['pass'], rep['failureMessages'])
+        self.assertEqual(s['greenSideViolationCount'], 0)
+        self.assertEqual(s['greenSideEdges'], 4)
+        self.assertAlmostEqual(s['minGreenSide'], 541, places=6)
+        self.assertAlmostEqual(s['minMeasuredSide'], 300, places=6)  # the all-role inventory still sees it
+
+    def test_other_roles_ignored(self):
+        for role in ('solid', 'hazard', 'drag', 'no-grapple'):
+            with self.subTest(role=role):
+                s = self.green([element('O', rect(1600, 300), role)])['summary']
+                self.assertTrue(s['pass'])
+                self.assertEqual((s['greenSideEdges'], s['minGreenSide']), (0, None))
+
+    def test_270_rule_unchanged(self):
+        rep = self.green([element('G', rect(1200, 269))])
+        s = rep['summary']
+        self.assertEqual(s['minSideLength'], MIN_SIDE_LENGTH)
+        self.assertEqual(s['sideViolations'], 2)
+        self.assertEqual(s['greenSideViolationCount'], 2)
+        self.assertEqual(sum('side length 269.000000 < 270.0' in m for m in rep['failureMessages']), 2)
+        self.assertNotIn('greenSideViolations', check_sides(level([element('G', rect(1200, 539))]))['summary'])
+
+
 def world_polygons(lvl):
     return {e['id']: (e['role'], [(e['x'] + p['x'], e['y'] + p['y']) for p in e['points']]) for e in lvl['elements']}
 
@@ -249,6 +305,38 @@ class CliTests(unittest.TestCase):
         p, rep = self.run_cli('--sides-only', '--level', str(FIXTURES / 'positive.level.json'))
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('min_side_rule=270.0', p.stdout)
+
+    def test_green_fixtures(self):
+        for name, code in (('green-539.level.json', 1), ('green-541.level.json', 0)):
+            with self.subTest(name=name):
+                p, rep = self.run_cli('--sides-only', '--level', str(FIXTURES / name), '--green-min-side', '540')
+                self.assertEqual(p.returncode, code, p.stderr)
+                self.assertIn('green_min_side=540', p.stdout)
+                s = rep['summary']
+                self.assertEqual(s['greenSideViolationCount'], 2 if code else 0)
+                self.assertEqual(s['sideViolations'], 0)  # the 300 yellow side and the green sides pass 270
+                self.assertAlmostEqual(s['minGreenSide'], 539 if code else 541, places=6)
+                self.assertAlmostEqual(s['minMeasuredSide'], 300, places=6)
+        # Without the option the 539 fixture passes the unchanged 270 rule.
+        p, rep = self.run_cli('--sides-only', '--level', str(FIXTURES / 'green-539.level.json'))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertNotIn('green_min_side', p.stdout)
+        self.assertNotIn('greenSideViolations', rep['summary'])
+        self.assertEqual(self.run_cli('--sides-only', '--level', str(FIXTURES / 'green-541.level.json'),
+                                      '--green-min-side', '0')[0].returncode, 2)
+
+    def test_green_leveldata_js(self):
+        # The bundled leveldata.js wrapper loads like the level JSON; the shipped greens are not all >= 540 yet.
+        lvl = load_level(ROOT / 'leveldata.js')
+        self.assertIn('elements', lvl)
+        p, rep = self.run_cli('--sides-only', '--level', str(ROOT / 'leveldata.js'), '--green-min-side', '540')
+        self.assertIn(p.returncode, (0, 1), p.stderr)
+        s = rep['summary']
+        short = [(e['id'], i) for e in lvl['elements'] if e['role'] == 'bounce'
+                 for i, (a, b) in enumerate(zip(e['points'], e['points'][1:] + e['points'][:1]))
+                 if math.hypot(b['x'] - a['x'], b['y'] - a['y']) < 540 - COORD_TOL]
+        self.assertEqual([(v['element'], v['edge']) for v in s['greenSideViolations']], sorted(short))
+        self.assertEqual(p.returncode, 1 if short else 0)
 
     def test_default_rule_on_full_check(self):
         # Default full check on the shipped level: every rule plus min side 270, exit 0.

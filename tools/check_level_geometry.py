@@ -9,7 +9,7 @@ a comparison, never the computed result (docs/level-svg-format.md §7).
         [--reference MEASUREMENTS.json] [--min-side-length UNITS | --no-min-side-length]
         [--no-grapple-rest | --allow-grapple-rest] [--max-x-range MIN:MAX | --no-max-x-range]
     python3 tools/check_level_geometry.py --sides-only --level LEVEL.json --report REPORT.json \
-        [--min-side-length UNITS | --no-min-side-length] [--max-x-range MIN:MAX]
+        [--min-side-length UNITS | --no-min-side-length] [--max-x-range MIN:MAX] [--green-min-side UNITS]
 
 Checks:
 - level JSON polygons match the SVG geometry layer and the reference fragments
@@ -48,6 +48,13 @@ Checks:
   every element point, the spawn and the finish region lie within [MIN, MAX],
   so a failed jump never falls beside the map; each violating element is
   reported with its x extent (report maxXRange).
+- --green-min-side UNITS (TASK-911; opt-in, both modes): every side of every
+  role 'bounce' (green) polygon must be >= UNITS - COORD_TOL (e.g. 540 = 1 R);
+  the summary records greenSideViolations ([{element, edge, length}]),
+  greenSideViolationCount, greenSideViolationElements and minGreenSide. Other
+  roles do not count; the all-role --min-side-length rule is unchanged.
+
+--level also accepts the bundled leveldata.js (window.GRAPPLE_OVER_BUNDLED_LEVEL = {...};).
 
 Exit 0 when every check passes, 1 on a failed check, 2 on usage errors.
 """
@@ -730,6 +737,48 @@ def apply_x_range(report, level, lo, hi):
     return report
 
 
+def check_green_sides(level, minimum):
+    """Rows for the --green-min-side rule: role 'bounce' polygon edges shorter than minimum - COORD_TOL."""
+    lengths, violations = [], []
+    for eid, (element, poly) in sorted(level_polygons(level).items()):
+        if element.get('role') != 'bounce':
+            continue
+        for i, length in enumerate(side_lengths(poly)):
+            lengths.append(length)
+            if length < minimum - COORD_TOL:
+                violations.append({'element': eid, 'edge': i, 'length': r(length)})
+    return {'minimum': minimum, 'edges': len(lengths), 'violations': violations,
+            'minGreenSide': r(min(lengths)) if lengths else None}
+
+
+def apply_green_min_side(report, level, minimum):
+    """Add the --green-min-side result to a check()/check_sides() report and update its summary."""
+    result = check_green_sides(level, minimum)
+    for v in result['violations']:
+        report['failureMessages'].append('%s edge %d (bounce): green side length %.6f < %g' % (
+            v['element'], v['edge'], v['length'], minimum))
+    s = report['summary']
+    s.update({'greenMinSide': minimum, 'greenSideEdges': result['edges'],
+              'greenSideViolationCount': len(result['violations']),
+              'greenSideViolationElements': len({v['element'] for v in result['violations']}),
+              'minGreenSide': result['minGreenSide'], 'greenSideViolations': result['violations']})
+    s['pass'], s['failures'] = not report['failureMessages'], len(report['failureMessages'])
+    return report
+
+
+def load_level(path):
+    """Level JSON, or the bundled leveldata.js wrapper (window.X = {...};)."""
+    with open(path) as f:
+        text = f.read()
+    stripped = text.lstrip()
+    if not stripped.startswith('{'):
+        start, end = text.find('{'), text.rstrip().rstrip(';').rstrip()
+        if start < 0:
+            raise ValueError('%s: no level object found' % path)
+        text = end[start:]
+    return json.loads(text)
+
+
 def x_range(text):
     try:
         lo, hi = (float(v) for v in text.split(':'))
@@ -772,7 +821,11 @@ def main(argv=None):
         if argv[i] == '--max-x-range' and argv[i + 1].startswith('-'):
             argv[i:i + 2] = ['--max-x-range=' + argv[i + 1]]
             break
+    parser.add_argument('--green-min-side', type=float, metavar='UNITS', default=None,
+                        help='also fail any side of a role bounce (green) polygon shorter than UNITS (opt-in)')
     args = parser.parse_args(argv)
+    if args.green_min_side is not None and not (math.isfinite(args.green_min_side) and args.green_min_side > 0):
+        parser.error('--green-min-side must be a positive finite number')
     if args.sides_only and args.no_grapple_rest:
         parser.error('--no-grapple-rest needs the full check (not --sides-only)')
     if args.no_grapple_rest is None:
@@ -783,8 +836,7 @@ def main(argv=None):
         parser.error('--svg is required unless --sides-only')
     if args.min_side_length is not None and not (math.isfinite(args.min_side_length) and args.min_side_length > 0):
         parser.error('--min-side-length must be a positive finite number')
-    with open(args.level) as f:
-        level = json.load(f)
+    level = load_level(args.level)
     if args.sides_only:
         report = check_sides(level, args.min_side_length)
     else:
@@ -795,6 +847,8 @@ def main(argv=None):
         report = check(level, svg_data, reference, args.min_side_length, args.no_grapple_rest)
     if args.max_x_range:
         apply_x_range(report, level, *args.max_x_range)
+    if args.green_min_side is not None:
+        apply_green_min_side(report, level, args.green_min_side)
     with open(args.report, 'w') as f:
         json.dump(report, f, separators=(',', ':'))
         f.write('\n')
@@ -804,10 +858,13 @@ def main(argv=None):
     sides = 'sides=%d violations=%d min_side=%s min_side_rule=%s' % (
         s['sideEdges'], s['sideViolations'], s['minMeasuredSide'],
         s['minSideLength'] if s['minSideEnforced'] else 'off')
+    green = (' green_min_side=%g green_sides=%d green_violations=%d green_violation_elements=%d min_green_side=%s' % (
+        s['greenMinSide'], s['greenSideEdges'], s['greenSideViolationCount'], s['greenSideViolationElements'],
+        s['minGreenSide']) if args.green_min_side is not None else '')
     if args.sides_only:
         print('SIDES_RESULT %s %s angles=%d/%d min_angle=%s' % (
             'PASS' if s['pass'] else 'FAIL', sides, s['anglePolygonsPass'], s['anglePolygons'], s['minInteriorAngle'])
-              + (' x_range_violations=%d' % s['maxXRangeViolations'] if args.max_x_range else ''))
+              + (' x_range_violations=%d' % s['maxXRangeViolations'] if args.max_x_range else '') + green)
     else:
         print('GEOMETRY_RESULT %s transfers=%d/%d pairs=%d/%d drag=%d/%d fragments=%d max_percent_error=%s '
               'min_pair_margin=%s min_drag_clearance=%s angles=%d/%d min_angle=%s %s' % (
@@ -818,7 +875,7 @@ def main(argv=None):
               + (' rest_faces=%d rest_violations=%d rest_pockets=%d min_rest_angle=%s' % (
                   s['noGrappleRestFaces'], s['noGrappleRestFaceViolations'], s['noGrappleRestPockets'],
                   s['minNoGrappleRestAngle']) if args.no_grapple_rest else '')
-              + (' x_range_violations=%d' % s['maxXRangeViolations'] if args.max_x_range else ''))
+              + (' x_range_violations=%d' % s['maxXRangeViolations'] if args.max_x_range else '') + green)
     return 0 if s['pass'] else 1
 
 
