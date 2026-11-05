@@ -30,6 +30,8 @@ EXTENDED_LAYOUT = 'extended-mountain-v15'
 # Since TASK-781 the shipped run adds a green wall on the outer side of every safe space S0..S8 / T0..T8 (--safe-walls,
 # SAFE_WALLS) as v22; `--no-safe-walls` is the previous shipped v21.
 SHIPPED_LAYOUT = 'extended-mountain-v22'
+# TASK-912 candidate: the shipped run plus --green-min-side (every green side >= UNITS + 5).
+GREEN_MIN_SIDE_LAYOUT = 'extended-mountain-v23'
 SKY_SPIRE_V21_LAYOUT = 'extended-mountain-v21'
 GAUNTLET_V20_LAYOUT = 'extended-mountain-v20'
 EXT_SUMMIT_V19_LAYOUT = 'extended-mountain-v19'
@@ -2946,6 +2948,381 @@ def shift_opening_p1(m, unmirrored_x):
     m['p1Shift'] = dict(fragment=f['id'], dx=dx, x=f['x'], centroidX=unmirrored_x, gaps=gaps)
 
 
+# TASK-912 (candidate, --green-min-side UNITS): every side of every green (role 'bounce') body >= UNITS + 5, without
+# changing the map. Each body keeps its contact face (the edge under svg.contact() for the body carrying it; for other
+# bodies - safe-space walls, shields, shelves - the face turned towards the contact) and every edge keeps its own line
+# direction: growth only translates the other edges' lines outward, so interior angles never change and each short
+# side grows along its own line, away from the contact face (down for platforms and slabs, outward for walls).
+GREEN_MIN_SIDE_MARGIN = 5.0
+# Grown bodies keep this clearance (the player diameter) from every other body, unless they were already closer.
+GREEN_GROWTH_CLEARANCE = 2 * svg.PLAYER_RADIUS
+# Edges facing the same way as the contact face (normal dot > this) only move as a recorded fallback.
+GREEN_FRONT_DOT = 0.5
+# Zone-area tolerance (square units): a corner stopped by bisection on a zone edge may sit a hair inside it.
+GREEN_ZONE_AREA_TOL = 0.01
+# A step cut back by a conflict stops this far (units) short of the largest safe offset.
+GREEN_BACK_OFF = 0.5
+# No edge line moves further than this (units); beyond it the fallbacks take over.
+GREEN_MAX_OFFSET = 2 * 540.
+# Turn fallback: largest turn (degrees) of a stuck side about its fixed end; at most this many repairs per body.
+GREEN_MAX_TURN = 60
+GREEN_MAX_REPAIRS = 4
+# Growth attempts (the body plus its fallback repairs) per body and rigid shift.
+GREEN_SOLVE_BUDGET = 60
+# Rigid-shift fallback: largest shift (units) and growth attempts per tried shift.
+GREEN_MAX_SHIFT = 600
+GREEN_SHIFT_BUDGET = 10
+
+
+def edge_frame(poly):
+    """Unit direction and outward normal of every edge of poly (either winding)."""
+    area = sum(a[0]*b[1]-b[0]*a[1] for a, b in zip(poly, poly[1:]+poly[:1]))
+    sign = 1 if area > 0 else -1
+    out = []
+    for a, b in zip(poly, poly[1:]+poly[:1]):
+        d = math.dist(a, b); ux, uy = (b[0]-a[0])/d, (b[1]-a[1])/d
+        out.append(((ux, uy), (sign*uy, -sign*ux)))
+    return out
+
+
+def offset_polygon(poly, frame, offsets):
+    """poly with edge line i moved outward by offsets[i]; vertex k stays the intersection of lines k-1 and k.
+    Corners whose two lines did not move keep their exact original coordinates."""
+    n = len(poly); out = []
+    for k in range(n):
+        j = k - 1
+        if not offsets[j] and not offsets[k]:
+            out.append(list(poly[k])); continue
+        (n1, o1), (n2, o2) = (frame[j][1], offsets[j]), (frame[k][1], offsets[k])
+        c1 = n1[0]*poly[k][0]+n1[1]*poly[k][1]+o1
+        c2 = n2[0]*poly[k][0]+n2[1]*poly[k][1]+o2
+        det = n1[0]*n2[1]-n1[1]*n2[0]
+        if abs(det) < 1e-12:
+            raise ValueError('parallel adjacent edges cannot be offset')
+        out.append([(c1*n2[1]-c2*n1[1])/det, (n1[0]*c2-n2[0]*c1)/det])
+    return out
+
+
+def signed_lengths(poly, frame):
+    return [(b[0]-a[0])*u[0]+(b[1]-a[1])*u[1] for (a, b), (u, _) in zip(zip(poly, poly[1:]+poly[:1]), frame)]
+
+
+def convex_clip(subject, clipper):
+    """Part of polygon subject inside the convex polygon clipper (Sutherland-Hodgman)."""
+    sign = 1 if sum(a[0]*b[1]-b[0]*a[1] for a, b in zip(clipper, clipper[1:]+clipper[:1])) > 0 else -1
+    out = [tuple(p) for p in subject]
+    for a, b in zip(clipper, clipper[1:]+clipper[:1]):
+        pts, out = out, []
+        if not pts:
+            break
+        side = lambda p: sign*((b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0]))
+        for p, q in zip(pts, pts[1:]+pts[:1]):
+            sp, sq = side(p), side(q)
+            if sp >= 0:
+                out.append(p)
+            if (sp >= 0) != (sq >= 0):
+                t = sp/(sp-sq); out.append((p[0]+t*(q[0]-p[0]), p[1]+t*(q[1]-p[1])))
+    return out
+
+
+def poly_area(poly):
+    return abs(sum(a[0]*b[1]-b[0]*a[1] for a, b in zip(poly, poly[1:]+poly[:1])))/2
+
+
+def zone_overlap(poly, zone):
+    """Area of the simple polygon poly inside the convex zone polygon."""
+    part = convex_clip(poly, zone)
+    return poly_area(part) if len(part) > 2 else 0.
+
+
+def bbox_of(poly, pad=0.):
+    xs = [p[0] for p in poly]; ys = [p[1] for p in poly]
+    return (min(xs)-pad, min(ys)-pad, max(xs)+pad, max(ys)+pad)
+
+
+def boxes_meet(a, b):
+    return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
+
+
+def green_anchor(f, k, poly, frame):
+    """Index of the contact face of body k (fragment-local poly): the edge nearest svg.contact() on the body that
+    carries it (within the player radius), else the edge whose outward normal faces the contact."""
+    cx, cy = svg.contact(f); c = (cx-f['x'], cy-f['y'])
+    edges = list(zip(poly, poly[1:]+poly[:1]))
+    near = [point_segment(c, a, b)[0] for a, b in edges]
+    if min(near) <= svg.PLAYER_RADIUS + 1e-6:
+        return near.index(min(near)), 'contact'
+    def facing(i):
+        (a, b), (_, nrm) = edges[i], frame[i]
+        mx, my = (a[0]+b[0])/2, (a[1]+b[1])/2; d = math.hypot(c[0]-mx, c[1]-my) or 1.
+        return nrm[0]*(c[0]-mx)/d + nrm[1]*(c[1]-my)/d
+    return max(range(len(edges)), key=facing), 'facing'
+
+
+def body_distance(a, b):
+    return svg.polygon_gap([[tuple(p) for p in a]], [[tuple(p) for p in b]])
+
+
+def grow_green_min_side(m, units):
+    """Grow every green body until each side is >= units + GREEN_MIN_SIDE_MARGIN (see the TASK-912 note above).
+
+    Bodies are grown one at a time in route order. A short edge is lengthened by moving its neighbouring edge lines
+    (or its own, where that lengthens it) outward: never the contact face, and edges facing the contact face's way
+    only as a fallback. Every step is checked against the other bodies (green as grown so far, yellow bands) with
+    GREEN_GROWTH_CLEARANCE, the purple zones (a body wholly inside a zone stays inside it; no other body gains area
+    inside any zone), the spawn (player radius clear of every green body) and the finish rectangle (never covered);
+    a step that conflicts is cut back to the largest safe amount and that edge stops moving, so the remaining
+    deficit goes to the other allowed direction. Bodies needing a cut-back or a fallback edge are recorded in
+    m['greenMinSide']['fallbacks']; bodies that cannot reach the target are an error."""
+    target = units + GREEN_MIN_SIDE_MARGIN
+    fs = m['fragments']
+    zones = [z['polygon'] for z in m.get('noGrappleZones', [])]
+    yellow = [[tuple(p) for p in z['polygon']] for z in m['yellowBands']]
+    summit = fs[-1]
+    fin = (summit['x']-svg.FINISH_PAD[0], summit['y']-svg.FINISH_PAD[1],
+           summit['x']+summit['width']+svg.FINISH_PAD[0], summit['y'])
+    finish = [(fin[0], fin[1]), (fin[2], fin[1]), (fin[2], fin[3]), (fin[0], fin[3])]
+    spawn = svg.SPAWN
+    contacts = {f['id']: svg.contact(f) for f in fs}
+    # Current absolute green bodies, keyed (fragment index, body index).
+    current = {(i, k): [list(svg.world(f, p)) for p in poly] for i, f in enumerate(fs) for k, poly in enumerate(f['polys'])}
+    original = copy.deepcopy(current)
+    contact_shifts = {}
+    changed, fallbacks, transfers_before = [], [], {r['id']: r['distance'] for r in m['encounters']}
+    pairs_before = {(c['source'], c['target']): c['minimumGap'] for c in m['pairChecks']}
+    def grow_one(key, fair):
+        i, k = key; f = fs[i]; poly = [list(p) for p in f['polys'][k]]
+        frame = edge_frame(poly)
+        n = len(poly)
+        eid = svg.body_id(f, k)
+        anchor0, how = green_anchor(f, k, poly, frame)
+        orig_abs = original[key]
+        inside = [zi for zi, z in enumerate(zones) if zone_overlap(orig_abs, z) >= poly_area(orig_abs) - 1e-6]
+        zone_before = [zone_overlap(orig_abs, z) for z in zones]
+        # Fixed neighbourhood: everything that could come near this body at any growth we allow.
+        reach = bbox_of(orig_abs, 4*target)
+        others = [(('green',) + kk, p) for kk, p in current.items() if kk != key and boxes_meet(bbox_of(p), reach)]
+        others += [(('yellow', yi), p) for yi, p in enumerate(yellow) if boxes_meet(bbox_of(p), reach)]
+        need, fair_need = {}, {}
+        for name, p in others:
+            then = original[name[1:]] if name[0] == 'green' else p
+            d0 = body_distance(orig_abs, then)
+            need[name] = min(GREEN_GROWTH_CLEARANCE, d0)
+            if fair and name[0] == 'green':
+                # Fair share: take at most half of the free gap to another green body (its original outline).
+                fair_need[name] = (d0 + need[name])/2
+        def conflict(local, fr):
+            ab = [[f['x']+x, f['y']+y] for x, y in local]
+            if self_intersections(ab) or min(signed_lengths(local, fr)) <= 1.:
+                return 'shape'
+            bb = bbox_of(ab, GREEN_GROWTH_CLEARANCE)
+            for name, p in others:
+                if boxes_meet(bb, bbox_of(p)) and body_distance(ab, p) < need[name] - 1e-6:
+                    return 'body %s' % (name,)
+                if name in fair_need:
+                    then = original[name[1:]]
+                    if boxes_meet(bbox_of(ab, fair_need[name]), bbox_of(then)) and \
+                            body_distance(ab, then) < fair_need[name] - 1e-6:
+                        return 'share %s' % (name,)
+            for zi, z in enumerate(zones):
+                if zi in inside:
+                    if zone_overlap(ab, z) < poly_area(ab) - GREEN_ZONE_AREA_TOL:
+                        return 'leaves zone %d' % zi
+                elif zone_overlap(ab, z) > zone_before[zi] + GREEN_ZONE_AREA_TOL:
+                    return 'enters zone %d' % zi
+            if svg.point_in_polygon(spawn, [tuple(p) for p in ab]) or min(
+                    point_segment(spawn, a, b)[0] for a, b in zip(ab, ab[1:]+ab[:1])) <= svg.PLAYER_RADIUS:
+                return 'spawn'
+            if zone_overlap(ab, finish) > 1e-6:
+                return 'finish'
+            return None
+        def solve(base, anchor, collapsed=()):
+            """Grow base (the body, possibly shifted or with folded corners) with the contact face anchor.
+            Returns (new polygon, offsets, cut-backs, fallback level, folded edges) or a failure reason."""
+            budget[0] -= 1
+            if budget[0] < 0:
+                return 'fallback search budget exhausted'
+            n = len(base); fr = edge_frame(base); na = fr[anchor][1]
+            # The contact face itself never moves; edges facing its way move only as a fallback, and the facing face
+            # of a body without the contact (wall, shield, shelf) only as the last one.
+            cost = [(None if how == 'contact' else 3) if j == anchor else
+                    (2 if fr[j][1][0]*na[0]+fr[j][1][1]*na[1] > GREEN_FRONT_DOT else 1) for j in range(n)]
+            o = [0.]*n; saturated = set(); reasons = []; used_front = 0
+            if conflict(base, fr) is not None:
+                return 'start: %s' % conflict(base, fr)
+            def lengths(off):
+                return signed_lengths(offset_polygon(base, fr, off), fr)
+            def column(j, off):
+                base_l = lengths(off); bump = list(off); bump[j] += 1.
+                return [b - a for a, b in zip(base_l, lengths(bump))]
+            for _ in range(400):
+                L = lengths(o)
+                short = [e for e in range(n) if L[e] < target - 1e-7]
+                if not short:
+                    break
+                e = min(short, key=lambda e: L[e])
+                cands = []
+                for j in sorted({(e-1) % n, e, (e+1) % n}):
+                    if cost[j] is None or j in saturated:
+                        continue
+                    col = column(j, o); d = col[e]
+                    # Never pay for this edge by shortening another edge that is itself still short (two chamfer
+                    # edges would otherwise push each other outward without end).
+                    if d > 1e-9 and o[j] < GREEN_MAX_OFFSET and not any(
+                            col[x] < -1e-9 and L[x] < target - 1e-7 for x in range(n) if x != e):
+                        cands.append((cost[j], j, d))
+                if not cands:
+                    # Extend fallback (resize_opening_sides' 'extend'): slide the stuck edge's free end along the edge's
+                    # own line until the edge is long enough; only the neighbouring non-contact edge turns. Where that
+                    # conflicts, the stuck edge itself turns about its fixed end, 5 degrees at a time (never the contact
+                    # face), the smallest turn first.
+                    grown = offset_polygon(base, fr, o)
+                    turns = [0] + ([t*sg for t in range(5, GREEN_MAX_TURN+1, 5) for sg in (1, -1)]
+                                   if e != anchor else [])
+                    options = []
+                    if e == anchor:
+                        # The contact face only lengthens along its own line: split the deficit between its two ends.
+                        u = fr[e][0]; deficit = target - L[e] + 1e-6
+                        for share in (.5, .4, .6, .3, .7, .2, .8, .1, .9, 0., 1.):
+                            ext = [list(p) for p in grown]
+                            a0, a1 = e, (e+1) % n
+                            ext[a0] = [grown[a0][0]-u[0]*deficit*share, grown[a0][1]-u[1]*deficit*share]
+                            ext[a1] = [grown[a1][0]+u[0]*deficit*(1-share), grown[a1][1]+u[1]*deficit*(1-share)]
+                            options.append((ext, dict(op='extend', edge=e, share=share, length=L[e])))
+                    for turn in (turns[1:] if e == anchor else turns):
+                        for v, fixed, other in (((e+1) % n, e, (e+1) % n), (e, (e+1) % n, (e-1) % n)):
+                            if other == anchor:
+                                continue
+                            dx, dy = grown[v][0]-grown[fixed][0], grown[v][1]-grown[fixed][1]
+                            r = math.hypot(dx, dy); c, sn = math.cos(math.radians(turn)), math.sin(math.radians(turn))
+                            ext = [list(p) for p in grown]
+                            ext[v] = [grown[fixed][0]+(c*dx-sn*dy)/r*(target+1e-6),
+                                      grown[fixed][1]+(sn*dx+c*dy)/r*(target+1e-6)]
+                            options.append((ext, dict(op='extend' if not turn else 'turn', edge=e, vertex=v,
+                                                      length=L[e], turnDegrees=turn)))
+                    for ext, note in (options if len(collapsed) < GREEN_MAX_REPAIRS else []):
+                        if min(interior_angles(ext)) < MIN_INTERIOR_ANGLE or conflict(ext, edge_frame(ext)) is not None:
+                            continue
+                        res = solve(ext, anchor, collapsed + (note,))
+                        if not isinstance(res, str):
+                            new, o2, r2, u2, c2 = res
+                            return new, o2, reasons + r2, max(used_front, u2), c2
+                    # Fold fallback: move the stuck edge's own line outward until the edge vanishes (its two
+                    # neighbours meet in one corner; only material is added), then grow the smaller polygon.
+                    shrink = column(e, o)[e]
+                    if e != anchor and n > 3 and shrink < -1e-9 and len(collapsed) < GREEN_MAX_REPAIRS:
+                        trial = list(o); trial[e] += -L[e]/shrink
+                        folded = offset_polygon(base, fr, trial)
+                        folded = folded[:(e+1) % n] + folded[(e+1) % n + 1:] if (e+1) % n else folded[1:]
+                        if min(interior_angles(folded)) >= MIN_INTERIOR_ANGLE and not self_intersections(folded):
+                            res = solve(folded, (anchor-1) % (n-1) if e == n-1 else anchor - (e < anchor), collapsed + (dict(op='fold', edge=e, length=L[e]),))
+                            if not isinstance(res, str):
+                                new, o2, r2, u2, c2 = res
+                                return new, o2, reasons + r2, max(used_front, u2), c2
+                    return 'edge %d (%.1f) cannot grow (contact face %d, saturated %s, %s)' % (
+                        e, L[e], anchor, sorted(saturated), reasons)
+                best = min(c[0] for c in cands)
+                group = [(j, d) for c, j, d in cands if c == best]
+                used_front = max(used_front, best - 1)
+                deficit = target - L[e] + 1e-6
+                for j, d in group:
+                    step = min(deficit/len(group)/d, GREEN_MAX_OFFSET - o[j])
+                    trial = list(o); trial[j] += step
+                    if conflict(offset_polygon(base, fr, trial), fr) is None:
+                        o = trial; continue
+                    lo, hi = 0., step
+                    for _ in range(40):
+                        mid = (lo+hi)/2; trial = list(o); trial[j] += mid
+                        if conflict(offset_polygon(base, fr, trial), fr) is None: lo = mid
+                        else: hi = mid
+                    o[j] += lo
+                    trial = list(o); trial[j] += hi - lo + 1e-6
+                    why = conflict(offset_polygon(base, fr, trial), fr)
+                    # A collapsing edge of this body is not a conflict with the map: other edges fix it next round.
+                    if why not in (None, 'shape') or lo <= 1e-6:
+                        # Stop a hair short of the obstacle so later turns of a neighbouring edge cannot tip it in.
+                        o[j] -= min(lo, GREEN_BACK_OFF)
+                        saturated.add(j); reasons.append(dict(edge=j, cut=round(step-lo, 3), conflict=why))
+            else:
+                return 'did not converge'
+            new = offset_polygon(base, fr, o)
+            if conflict(new, fr) is not None or min(interior_angles(new)) < MIN_INTERIOR_ANGLE:
+                return 'final shape conflicts: %s' % conflict(new, fr)
+            return new, o, reasons, used_front, list(collapsed)
+        budget = [GREEN_SOLVE_BUDGET]
+        result = solve(poly, anchor0); shift = None
+        movable = how == 'facing' or len(f['polys']) == 1
+        if isinstance(result, str) and movable:
+            # Last fallback: the smallest rigid shift that lets the body grow (16 directions, 10-unit rings). A body
+            # without the contact (shield, wall, shelf) moves alone; a single-body panel moves its whole fragment,
+            # so its contact point moves with it (recorded in contactShifts).
+            first = result
+            for r in range(10, GREEN_MAX_SHIFT+1, 10):
+                for a in range(16):
+                    dx, dy = r*math.cos(a*math.pi/8), r*math.sin(a*math.pi/8)
+                    budget[0] = GREEN_SHIFT_BUDGET
+                    result = solve([[x+dx, y+dy] for x, y in poly], anchor0)
+                    if not isinstance(result, str):
+                        shift = [dx, dy]; break
+                if shift:
+                    break
+            else:
+                result = first
+        if isinstance(result, str):
+            return '%s %s' % (eid, result)
+        new, o, reasons, used_front, folds = result
+        if shift and how == 'contact':
+            f['x'] += shift[0]; f['y'] += shift[1]
+            new = [[x-shift[0], y-shift[1]] for x, y in new]
+            contact_shifts[f['id']] = shift
+        f['polys'][k] = new
+        current[key] = [[f['x']+x, f['y']+y] for x, y in new]
+        rec = dict(element=eid, fragment=f['id'], semanticId=f['semanticId'], body=k, contactFace=anchor0,
+                   contactFaceFrom=how, offsets=[round(v, 6) for v in o], before=poly, after=new,
+                   minSideBefore=min(signed_lengths(poly, frame)), minSideAfter=min(signed_lengths(new, edge_frame(new))))
+        changed.append(rec)
+        if shift:
+            rec['shift'] = shift
+        if folds:
+            rec['folded'] = folds
+        if reasons or used_front or shift or folds or not fair:
+            fallbacks.append(dict(element=eid, frontEdgeMoved=used_front >= 1, facingFaceMoved=used_front >= 2,
+                                  shift=shift, folded=folds, fairShareDropped=not fair, cutBacks=reasons))
+        return None
+    def short(key):
+        poly = fs[key[0]]['polys'][key[1]]
+        return min(signed_lengths(poly, edge_frame(poly))) < target - 1e-9
+    # Pass 1: every short body within its fair share of each gap; pass 2: the bodies that failed, against the bodies as
+    # grown (fallback, recorded).
+    retry = [key for key in sorted(current) if short(key) and grow_one(key, True) is not None]
+    failed = [why for why in (grow_one(key, False) for key in retry) if why is not None]
+    if failed:
+        raise ValueError('green min side: %d bodies cannot grow:\n%s' % (len(failed), '\n'.join(failed)))
+    changed.sort(key=lambda c: (fs.index(next(f for f in fs if f['id'] == c['fragment'])), c['body']))
+    for f in fs:
+        moved_by = contact_shifts.get(f['id'], [0, 0])
+        if f['id'] not in contact_shifts and svg.contact(f) != contacts[f['id']] or \
+                math.dist(svg.contact(f), (contacts[f['id']][0]+moved_by[0], contacts[f['id']][1]+moved_by[1])) > 1e-6:
+            raise ValueError('green min side moved the contact of %s' % f['id'])
+    transfers = []
+    for row in m['encounters']:
+        a, b = fs[row['number']-1:row['number']+1]
+        d, w, _, _ = gap(a, b)
+        row.update(distance=d, witness=w)
+        if a['id'] in contact_shifts or b['id'] in contact_shifts:
+            row['flight'] = [svg.contact(a), svg.contact(b)]
+        transfers.append(dict(id=row['id'], before=transfers_before[row['id']], after=d))
+    for c in m['pairChecks']:
+        a = next(x for x in fs if x['id'] == c['source']); b = next(x for x in fs if x['id'] == c['target'])
+        d = gap(a, b)[0]
+        c.update(minimumGap=d, passOutsideRange=d-21.6 > 540)
+    m['greenMinSide'] = dict(units=units, target=target, clearance=GREEN_GROWTH_CLEARANCE, changed=changed,
+                             contactShifts=contact_shifts,
+                             fallbacks=fallbacks, transfers=transfers,
+                             purpose='TASK-912: every green side >= units + 5; contact faces and places kept')
+    return m
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source',help='concept measurements JSON (required unless --big-zone-fixture)')
@@ -2997,6 +3374,10 @@ def main():
     ap.add_argument('--p1-shift', action=argparse.BooleanOptionalAction, default=True,
                     help='(shipped run, with --mirror-p1) shift the mirrored P1 right so its polygon centroid x is the '
                          'unmirrored one (+95.67, the shipped hotfix). --no-p1-shift gives the unshifted mirror')
+    ap.add_argument('--green-min-side', type=float, default=None, metavar='UNITS',
+                    help='candidate (TASK-912): last step, grow every green body until each side is >= UNITS + 5 '
+                         '(contact faces and places kept; growth away from the contact face); layout id '
+                         + GREEN_MIN_SIDE_LAYOUT + ' on the shipped run')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -3074,6 +3455,10 @@ def main():
         mirror_opening_p1(m, opening)
         if args.p1_shift:
             shift_opening_p1(m, unmirrored_x)
+    if args.green_min_side is not None:
+        grow_green_min_side(m, args.green_min_side)
+        if shipped:
+            m['layoutId'] = GREEN_MIN_SIDE_LAYOUT
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);
