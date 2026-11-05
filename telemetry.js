@@ -110,6 +110,14 @@ const TELEMETRY = (() =>
             if (quitSent || !lastEvent) return
             quitSent = true
             ANALYTICS.design('quit:' + lastEvent.type + (lastEvent.sectionId ? ':' + lastEvent.sectionId : ''))
+        },
+        // pageshow from the back/forward cache (TASK-907): the page lives on,
+        // so its next pagehide sends the quit-time events again
+        reopen()
+        {
+            quitSent = false
+            resetClock()
+            falls.reopen()
         }
     }
 })()
@@ -351,6 +359,8 @@ function createFallTelemetry()
             quitSent = true
             ANALYTICS.design('quit_long_fall:' + longFall.section, bucket(longFall.displacement))
         },
+        // pageshow from the back/forward cache: quit_long_fall may be sent again
+        reopen() { quitSent = false },
         // For tests
         state: () => ({longest, longFall: longFall && {...longFall}})
     }

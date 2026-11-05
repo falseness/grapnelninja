@@ -176,7 +176,11 @@ dropped; error messages <= 8000 chars), records it in `ANALYTICS.debugLog`
   The dev index.html and the GamePix / Playgama builds stay on `none.js`.
 - Call sites: boot sends `init({build: PLATFORM.buildVersion})` +
   `sessionStart()` once after `PLATFORM.init()`; `pagehide` sends one
-  `sessionEnd()` per page; window `error` / `unhandledrejection` send
+  `sessionEnd()` per page; a `pageshow` with `persisted` (the page came back
+  from the back/forward cache, TASK-907) reopens it: `sessionStart()` (a new
+  GameAnalytics session; events wait until it started), progression `Start`
+  again for the run and section the pagehide failed, and the next `pagehide`
+  sends the quit-time events and `sessionEnd()` again; window `error` / `unhandledrejection` send
   `error('error', '<message> @ <file>:<line>')`, deduplicated, at most 10 per
   session; `PLATFORM.showInterstitial` / `showRewarded` results send
   `ad('show' | 'failed_show' | 'reward_received', 'interstitial' | 'rewarded',

@@ -223,7 +223,10 @@
             // pagehide -> once per page: mode time flush, play time, quit:<last event>,
             // the session's longest fall, a quit soon after a long fall, the
             // section height and Fail for the section and run in progress, then
-            // ANALYTICS.sessionEnd last
+            // ANALYTICS.sessionEnd last. A pageshow from the back/forward cache
+            // (TASK-907) reopens it all: a new analytics session, Start again
+            // for the run and section in progress, and the next pagehide sends
+            // the quit-time events again
             function watchAnalytics()
             {
                 const MAX_ERRORS = 10
@@ -256,6 +259,15 @@
                         () => CLIMB_UI.abandonProgression()])
                         try { step() } catch (e) {}
                     ANALYTICS.sessionEnd()
+                })
+                window.addEventListener('pageshow', e =>
+                {
+                    if (!e.persisted || !ended)
+                        return
+                    ended = false
+                    try { TELEMETRY.reopen() } catch (err) {}
+                    ANALYTICS.sessionStart()
+                    try { CLIMB_UI.resumeProgression() } catch (err) {}
                 })
             }
             

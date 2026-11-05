@@ -1165,6 +1165,7 @@ const CLIMB_UI = {
     // (with its height), then the run in progress fails
     abandonProgression() {
         const p = this.progression
+        p.abandoned = {run: p.run, open: p.open}
         this.reportSectionHeight()
         if (p.open)
         {
@@ -1175,6 +1176,23 @@ const CLIMB_UI = {
         {
             p.run = false
             ANALYTICS.progression('Fail', version)
+        }
+    },
+    // pageshow from the back/forward cache (TASK-907): the run and the
+    // section that pagehide failed go on, so they start again
+    resumeProgression() {
+        const p = this.progression, abandoned = p.abandoned
+        p.abandoned = null
+        if (!abandoned) return
+        if (abandoned.run)
+        {
+            p.run = true
+            ANALYTICS.progression('Start', version)
+        }
+        if (abandoned.open && p.id !== null && !p.completed.has(p.id))
+        {
+            p.open = true
+            ANALYTICS.progression('Start', version, p.id)
         }
     },
     // Summit: the last section is complete

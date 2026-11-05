@@ -25,8 +25,9 @@
 // the /events POST sent by fetch(keepalive) - same body and Authorization
 // header - so it outlives the page; rows handed to that request leave the
 // SDK's localStorage store so a revisit does not send them again. After
-// endSession nothing is sent. A pagehide without endSession ends the session
-// the same way.
+// endSession nothing is sent until startSession() reopens the session (a
+// page restored from the back/forward cache, TASK-907). A pagehide without
+// endSession ends the session the same way.
 // Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
 var GA_KEYS = {gameKey: '', secretKey: ''}
 
@@ -46,7 +47,8 @@ var ANALYTICS_BACKEND = (function()
     let initialized = false
     let ready = false
     let live = false
-    // endSession ran: later calls are dropped
+    let listening = false
+    // endSession ran: later calls are dropped until startSession()
     let ended = false
     // Bytes a keepalive request may carry (browsers allow 64 KiB in flight)
     const KEEPALIVE_MAX = 60000
@@ -118,8 +120,11 @@ var ANALYTICS_BACKEND = (function()
         const ga = sdk().GameAnalytics
         if (typeof ga.isRemoteConfigsReady !== 'function')
             return goLive()
-        if (typeof ga.addRemoteConfigsListener === 'function')
+        if (!listening && typeof ga.addRemoteConfigsListener === 'function')
+        {
+            listening = true
             deliver('addRemoteConfigsListener', [{onRemoteConfigsUpdated: () => setTimeout(goLive, 0)}])
+        }
         const started = Date.now()
         const timer = setInterval(() =>
         {
@@ -258,6 +263,35 @@ var ANALYTICS_BACKEND = (function()
         flushForUnload()
     }
 
+    // TASK-907: the page came back from the back/forward cache after endNow.
+    // GameAnalytics.startSession() sends a new init request and starts a new
+    // session (and its event queue timer, stopped by endSessionAndStopQueue;
+    // the GA-thread task timer never stops) when that answers. Until then the
+    // SDK drops events ("Session has not started yet"), so they wait in
+    // `pending` again until GAState reports the new session (or the
+    // remote-configs listener fires on the answer).
+    function restart()
+    {
+        ended = false
+        if (!live)
+            return waitUntilReady()
+        live = false
+        deliver('startSession', [])
+        const state = internal('state.GAState')
+        if (!state || typeof state.sessionIsStarted !== 'function')
+            return goLive()
+        const started = Date.now()
+        const timer = setInterval(() =>
+        {
+            let isStarted = false
+            try { isStarted = !!state.sessionIsStarted() } catch (e) {}
+            if (isStarted || Date.now() - started > POLL_FOR_MS)
+                setTimeout(goLive, 0)
+            if (isStarted || live || ended || Date.now() - started > POLL_FOR_MS)
+                clearInterval(timer)
+        }, POLL_MS)
+    }
+
     return {
         backendId: 'gameanalytics',
 
@@ -289,11 +323,14 @@ var ANALYTICS_BACKEND = (function()
         },
 
         // GA starts the session itself when its init answers, so a start or
-        // end before that is dropped rather than queued
+        // end before that is dropped rather than queued. After endSession
+        // (a pageshow from the back/forward cache) it reopens the session.
         startSession()
         {
-            if (live && ended)
-                ended = false
+            if (!ready)
+                return
+            if (ended)
+                return restart()
             if (live)
                 call('startSession', [])
         },

@@ -33,10 +33,24 @@ network service still sends it. --quit therefore runs Chromium with a NetLog
 of such a request from the NetLog entry with the same URL and Authorization
 header (row 'status_source': 'netlog'); the header values are never written.
 
+TASK-907 --bfcache: the page is kept in the back/forward cache (full
+Chromium, channel='chromium', bfcache enabled): after the boot session the
+player leaves to a same-origin page (pagehide persisted, the game ends its
+session and sends the quit-time events), comes back with go_back
+(pageshow persisted: the game reopens a GameAnalytics session), plays and
+opens the pause screen, then leaves again. SDK calls are tagged by phase
+(leave1 / restore / leave2) in the page. Passes only if the page really
+came back from the bfcache, after the restore startSession and at least one
+design event were handed to the SDK and every design / progression event of
+the restore phase arrived in an /events POST answered 200 together with the
+new session's 'user' event, the first and the second pagehide each pass the
+--quit checks, and no event arrived after the restore more often than the
+game handed it to the SDK after the restore.
+
 GA_GAME_KEY / GA_SECRET_KEY are read from the environment or
 /root/credentials/grapnelninja/credentials.env only to redact them.
 
-    python3 tools/smoke_gameanalytics.py [--zip ZIP] [--quit] --out ga-smoke.json
+    python3 tools/smoke_gameanalytics.py [--zip ZIP] [--quit | --bfcache] --out ga-smoke.json
 """
 import argparse
 from contextlib import ExitStack
@@ -101,6 +115,94 @@ RECORD_SDK = r'''() => {
     events.addSessionEndEvent = function(...a) {
         console.log('GA-CALL ' + JSON.stringify(['<session_end stored>', []])); return end.apply(this, a) }
 }'''
+
+
+# --bfcache, init script (before the game's scripts, so these listeners run
+# before the game's own pagehide / pageshow handlers): the phase is
+# leave<n> from the n-th pagehide, restore<n> from the n-th persisted pageshow
+BFCACHE_LIFECYCLE = r'''
+    window.__gaPhase = 'before'; window.__gaLog = []; window.__gaMarks = []
+    let leaves = 0, restores = 0
+    addEventListener('pagehide', e => { window.__gaPhase = 'leave' + (++leaves); window.__gaMarks.push(['pagehide', e.persisted]) })
+    addEventListener('pageshow', e => { if (e.persisted) window.__gaPhase = 'restore' + (++restores);
+        window.__gaMarks.push(['pageshow', e.persisted]) })
+'''
+
+# --bfcache: the RECORD_SDK calls kept in the page (console messages of a page
+# entering the bfcache are not delivered reliably); read after the last return
+RECORD_PHASES = r'''() => {
+    const ga = gameanalytics.GameAnalytics
+    for (const fn of ['addDesignEvent', 'addProgressionEvent', 'addErrorEvent', 'addAdEvent',
+                      'endSession', 'startSession']) {
+        const orig = ga[fn]
+        ga[fn] = function(...a) { window.__gaLog.push([window.__gaPhase, fn, JSON.parse(JSON.stringify(a))]); return orig.apply(this, a) }
+    }
+    const events = gameanalytics.events.GAEvents, end = events.addSessionEndEvent
+    events.addSessionEndEvent = function(...a) { window.__gaLog.push([window.__gaPhase, '<session_end stored>', []]); return end.apply(this, a) }
+    // The backend's unload batch: fetch(keepalive) /events. DevTools never
+    // reports it for a page going into the bfcache, so its body is read here
+    // and its status from the NetLog (same Authorization header)
+    window.__gaFetch = []
+    const fetchOrig = window.fetch
+    window.fetch = function(url, init) {
+        try {
+            if (/gameanalytics\.com\/.*\/events$/.test(String(url))) {
+                const rows = JSON.parse(init.body)
+                window.__gaFetch.push({phase: window.__gaPhase, url: String(url), auth: init.headers.Authorization,
+                    keepalive: !!init.keepalive, categories: rows.map(e => e.category + ((e.category === 'design' ||
+                        e.category === 'progression') && typeof e.event_id === 'string' ? ':' + e.event_id : ''))})
+            }
+        } catch (e) {}
+        return fetchOrig.apply(this, arguments)
+    }
+}'''
+
+
+def delivered_200(rows):
+    return [c for r in rows if r['url'].endswith('/events') and r['status'] == 200 for c in r.get('categories') or []]
+
+
+def bfcache_verdict(calls, rows, marks, restored):
+    """calls: [[phase, fn, args]] from the leave on; rows: GA rows from leave1 on (with markers)."""
+    at = {r['marker']: i for i, r in enumerate(rows) if r.get('marker')}
+    phase = {name: [[fn, a] for ph, fn, a in calls if ph == name]
+             for name in ('leave1', 'restore1', 'leave2', 'restore2')}
+    restore_rows = rows[at['restore']:]
+    expected_restore = [event_id(fn, a) for fn, a in phase['restore1'] if event_id(fn, a)]
+    pool = delivered_200(restore_rows)
+    missing = []
+    for e in expected_restore:
+        if e in pool:
+            pool.remove(e)
+        else:
+            missing.append(e)
+    handed_after = expected_restore + [event_id(fn, a) for name in ('leave2', 'restore2')
+                                       for fn, a in phase[name] if event_id(fn, a)]
+    delivered_after = [c for c in delivered_200(restore_rows) if c.split(':')[0] in ('design', 'progression')]
+    twice = sorted({c for c in delivered_after if delivered_after.count(c) > handed_after.count(c)})
+    leave1 = quit_verdict(phase['leave1'], rows[:at['restore']])
+    leave2 = quit_verdict(phase['leave2'], rows[at['leave2']:])
+    names = [fn for fn, _ in phase['restore1']]
+    result = {
+        'restored_from_bfcache': restored,
+        'marks': marks,
+        'restore_calls': [fn + (':' + (event_id(fn, a) or '')) for fn, a in phase['restore1']],
+        'restore_start_session': 'startSession' in names,
+        'restore_design_events': [e for e in expected_restore if e.startswith('design:')],
+        'restore_expected': expected_restore,
+        'restore_missing': missing,
+        'restore_session_user_event_200': any(r['url'].endswith('/events') and r['status'] == 200
+                                              and 'user' in (r.get('categories') or []) for r in restore_rows),
+        'delivered_twice_after_restore': twice,
+        'leave1_quit': leave1,
+        'leave2_quit': leave2,
+    }
+    persisted = [m for m in marks if m != ['pageshow', False]]
+    result['pass'] = bool(restored and persisted[:2] == [['pagehide', True], ['pageshow', True]]
+                          and result['restore_start_session'] and result['restore_design_events']
+                          and not missing and result['restore_session_user_event_200'] and not twice
+                          and leave1['pass'] and leave2['pass'])
+    return result
 
 
 def netlog_requests(path):
@@ -178,7 +280,13 @@ def main(argv=None):
     parser.add_argument('--quit', action='store_true', help='real pagehide by navigation, then a revisit')
     parser.add_argument('--leave-seconds', type=float, default=10.0)
     parser.add_argument('--revisit-seconds', type=float, default=12.0)
+    parser.add_argument('--bfcache', action='store_true',
+                        help='leave to a same-origin page, come back from the back/forward cache, leave again')
+    parser.add_argument('--restore-seconds', type=float, default=30.0,
+                        help='--bfcache: longest wait for the restored session\'s events')
     args = parser.parse_args(argv)
+    if args.quit and args.bfcache:
+        parser.error('--quit and --bfcache are separate runs')
     env = credentials()
     secrets = {name: env[name] for name in ('GA_GAME_KEY', 'GA_SECRET_KEY') if env.get(name)}
 
@@ -188,6 +296,8 @@ def main(argv=None):
         return text
 
     rows, blocked, page_errors = [], [], []
+    # Authorization headers of the /events requests DevTools answered (never written)
+    seen_auth = set()
     # row index -> (raw url, Authorization) of GA requests DevTools saw fail
     failed_raw = {}
     netlog_dir = Path(tempfile.mkdtemp(prefix='ga-netlog-'))
@@ -195,6 +305,8 @@ def main(argv=None):
     with ExitStack() as stack, tempfile.TemporaryDirectory(prefix='ga-smoke-') as site:
         with zipfile.ZipFile(args.zip) as z:
             z.extractall(site)
+        if args.bfcache:
+            Path(site, 'away.html').write_text('<!doctype html><title>away</title><p>away</p>')
         server = ThreadingHTTPServer(('127.0.0.1', 0), partial(Quiet, directory=site))
         Thread(target=server.serve_forever, daemon=True).start()
         stack.callback(server.server_close)
@@ -203,11 +315,18 @@ def main(argv=None):
         playwright = sync_playwright().start()
         stack.callback(playwright.stop)
         launch_args = ['--no-sandbox']
-        if args.quit:
+        if args.quit or args.bfcache:
             launch_args += [f'--log-net-log={netlog}', '--net-log-capture-mode=IncludeSensitive']
-        browser = playwright.chromium.launch(args=launch_args)
+        if args.bfcache:
+            # The default headless shell never restores from the bfcache
+            browser = playwright.chromium.launch(channel='chromium', args=launch_args,
+                                                 ignore_default_args=['--disable-back-forward-cache'])
+        else:
+            browser = playwright.chromium.launch(args=launch_args)
         stack.callback(browser.close)
         context = browser.new_context(viewport={'width': 1280, 'height': 720})
+        if args.bfcache:
+            context.add_init_script(BFCACHE_LIFECYCLE)
 
         def route(r):
             url = r.request.url
@@ -241,6 +360,7 @@ def main(argv=None):
                        'type': response.request.resource_type}
                 if response.url.endswith('/events'):
                     row['categories'] = categories(response.request)
+                    seen_auth.add((response.request.headers or {}).get('authorization'))
                 rows.append(row)
 
         def on_failed(request):
@@ -250,6 +370,17 @@ def main(argv=None):
                              'url': redact(request.url), 'status': None, 'type': request.resource_type,
                              'failure': request.failure,
                              'categories': categories(request) if request.url.endswith('/events') else None})
+        # --bfcache: GA requests DevTools never answered (a page in the bfcache)
+        unanswered = {}
+        page_fetches = []
+
+        def on_request(request):
+            if is_ga(request.url):
+                unanswered[id(request)] = (round(time.time() - started, 2), request)
+        if args.bfcache:
+            context.on('request', on_request)
+            context.on('response', lambda r: unanswered.pop(id(r.request), None))
+            context.on('requestfailed', lambda r: unanswered.pop(id(r), None))
         context.on('response', on_response)
         context.on('requestfailed', on_failed)
         page = context.new_page()
@@ -266,7 +397,53 @@ def main(argv=None):
             if session_ok(rows) and env_ok(rows):
                 break
         quit_calls, leave_at = [], None
-        if args.quit:
+        marks, restored = [], False
+        if args.bfcache:
+            page.evaluate(RECORD_PHASES)
+            page.wait_for_timeout(500)
+            leave_at = len(rows)
+            rows.append({'url': '', 't': round(time.time() - started, 2), 'marker': 'leave1'})
+            page.goto(base + 'away.html')
+            page.wait_for_timeout(args.leave_seconds * 1000)
+            rows.append({'url': '', 't': round(time.time() - started, 2), 'marker': 'restore'})
+            page.go_back(wait_until='commit')
+            page.wait_for_timeout(1500)
+            # (away.html runs the init script too: the game's globals tell the pages apart)
+            restored = page.evaluate("() => typeof ANALYTICS === 'object' && "
+                                     "window.__gaMarks.some(m => m[0] === 'pageshow' && m[1])")
+            if restored:
+                def restore_calls(fn):
+                    return [c for c in page.evaluate('() => window.__gaLog') if c[0] == 'restore1' and c[1] == fn]
+                # The restored page is auto-paused: toggle until the player opened the pause screen
+                for _ in range(4):
+                    page.mouse.click(box['x'] + box['width'] * 0.7, box['y'] + box['height'] * 0.3)
+                    page.wait_for_timeout(500)
+                    page.keyboard.press('p')
+                    page.wait_for_timeout(700)
+                    if any(c[2][:1] == ['ui:pause:open:user'] for c in restore_calls('addDesignEvent')):
+                        break
+                deadline = time.time() + args.restore_seconds
+                while time.time() < deadline:
+                    page.wait_for_timeout(1000)
+                    expected = [event_id(fn, a) for ph, fn, a in page.evaluate('() => window.__gaLog')
+                                if ph == 'restore1' and event_id(fn, a)]
+                    pool = delivered_200(rows[[i for i, r in enumerate(rows) if r.get('marker') == 'restore'][0]:])
+                    if expected and all(pool.count(e) >= expected.count(e) for e in expected) and 'user' in pool:
+                        break
+                page.wait_for_timeout(500)
+                rows.append({'url': '', 't': round(time.time() - started, 2), 'marker': 'leave2'})
+                page.goto(base + 'away.html')
+                page.wait_for_timeout(args.leave_seconds * 1000)
+                # Come back once more only to read the page's call log
+                rows.append({'url': '', 't': round(time.time() - started, 2), 'marker': 'back to read the log'})
+                page.go_back(wait_until='commit')
+                page.wait_for_timeout(1500)
+            if page.evaluate("() => typeof ANALYTICS === 'object'"):
+                quit_calls[:] = page.evaluate('() => window.__gaLog')
+                marks[:] = page.evaluate('() => window.__gaMarks')
+                page_fetches[:] = page.evaluate('() => window.__gaFetch || []')
+            rows.append({'url': '', 't': round(time.time() - started, 2), 'marker': 'end'})
+        elif args.quit:
             page.on('console', lambda m: quit_calls.append(json.loads(m.text[len('GA-CALL '):]))
                     if m.text.startswith('GA-CALL ') else None)
             page.evaluate(RECORD_SDK)
@@ -286,9 +463,15 @@ def main(argv=None):
             page.wait_for_timeout(2000)
         context.close()
         browser.close()
+        for t, request in unanswered.values():
+            if request.method == 'POST' and request.url.endswith('/events'):
+                failed_raw[len(rows)] = (request.url, (request.headers or {}).get('authorization'))
+                rows.append({'t': t, 'method': request.method, 'url': redact(request.url), 'status': None,
+                             'type': request.resource_type, 'failure': 'no response in DevTools (page in bfcache)',
+                             'categories': categories(request)})
 
     netlog_summary = []
-    if args.quit:
+    if args.quit or args.bfcache:
         logged = netlog_requests(netlog) if netlog.exists() else []
         auths = {auth for _, auth in failed_raw.values() if auth}
         netlog_summary = [{'method': r.get('method'), 'events': r['url'].endswith('/events'),
@@ -302,7 +485,26 @@ def main(argv=None):
                 rows[i]['devtools_failure'] = rows[i].pop('failure', None)
                 rows[i]['status'] = hits[-1]['status']
                 rows[i]['status_source'] = 'netlog'
+        if args.bfcache:
+            # In-page keepalive /events fetches DevTools never reported: the
+            # status of the NetLog request with the same Authorization header,
+            # placed right after the marker of the phase that sent them
+            marker_t = {r['marker']: r['t'] for r in rows if r.get('marker')}
+            names = {'leave1': 'leave1', 'restore1': 'restore', 'leave2': 'leave2'}
+            for f in page_fetches:
+                if f['auth'] in seen_auth:
+                    continue
+                hits = [r for r in logged if r.get('method') == 'POST' and r['url'] == f['url']
+                        and r.get('auth') == f['auth'] and r.get('status')]
+                rows.append({'t': marker_t.get(names.get(f['phase']), 0) + 0.01, 'method': 'POST',
+                             'url': redact(f['url']), 'status': hits[-1]['status'] if hits else None,
+                             'type': 'fetch', 'keepalive': f['keepalive'], 'phase': f['phase'],
+                             'status_source': 'netlog' if hits else 'none',
+                             'body_source': 'in-page fetch', 'categories': f['categories']})
     shutil.rmtree(netlog_dir, ignore_errors=True)
+    if args.bfcache:
+        rows.sort(key=lambda r: r['t'])
+        leave_at = next(i for i, r in enumerate(rows) if r.get('marker') == 'leave1')
 
     init = [r for r in rows if '/init' in r['url']]
     events = [r for r in rows if r['url'].endswith('/events')]
@@ -327,6 +529,12 @@ def main(argv=None):
         report['sdk_calls_from_leave'] = quit_calls
         report['quit'] = quit_verdict(quit_calls, rows[leave_at:])
         report['pass'] = report['pass'] and report['quit']['pass']
+    if args.bfcache:
+        report['mode'] = 'bfcache'
+        report['netlog_ga_requests'] = netlog_summary
+        report['sdk_calls_from_leave'] = quit_calls
+        report['bfcache'] = bfcache_verdict(quit_calls, rows[leave_at:], marks, restored)
+        report['pass'] = report['pass'] and report['bfcache']['pass']
     text = redact(json.dumps(report, separators=(',', ':')))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(text + '\n')
@@ -336,6 +544,13 @@ def main(argv=None):
         q = report['quit']
         print(f'quit: expected {len(q["expected_at_pagehide"])}, missing {q["missing"]}, '
               f'after endSession {q["added_after_endSession"]}, after session_end {q["added_after_session_end_stored"]}')
+    if args.bfcache:
+        b = report['bfcache']
+        print(f'bfcache: restored {b["restored_from_bfcache"]}, marks {b["marks"]}, restore calls {b["restore_calls"]}, '
+              f'missing {b["restore_missing"]}, user 200 {b["restore_session_user_event_200"]}, '
+              f'twice {b["delivered_twice_after_restore"]}, leave1 pass {b["leave1_quit"]["pass"]} '
+              f'(missing {b["leave1_quit"]["missing"]}), leave2 pass {b["leave2_quit"]["pass"]} '
+              f'(missing {b["leave2_quit"]["missing"]})')
     return 0 if report['pass'] else 1
 
 

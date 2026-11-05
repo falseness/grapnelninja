@@ -26,6 +26,11 @@ record their arguments):
   the game handed the SDK, session_end last; the sent rows leave the saved
   store; nothing reaches the SDK after endSession; a second pagehide sends
   nothing.
+- TASK-907 back/forward cache: pageshow(persisted) after that pagehide calls
+  startSession once; the run's progression Start and later events wait
+  until the SDK's new session started, then go out; the next pagehide hands
+  the quit-time events and endSession again and sends one more keepalive
+  batch; a non-persisted pageshow or a second persisted one does nothing.
 - static: the itch zip loads the SDK + gameanalytics.js instead of none.js
   and ships the SDK unmodified with its licence; the y8 zip ships the same
   SDK and keys; the dev index.html and the gamepix / playgama zips stay on
@@ -104,6 +109,13 @@ MOCK_SDK = r'''
             recordEnd(...args)
             queue.push(() => ns.threading.GAThreading.endSessionAndStopQueue())
         }
+        // As in 5.0.0: a GA-thread task that starts a new session (the init
+        // answer is folded into it); until it ran sessionIsStarted() is false
+        const recordStart = GameAnalytics.startSession
+        GameAnalytics.startSession = function(...args) {
+            recordStart(...args)
+            queue.push(() => { if (!session) { session = true; ran.push('session_start') } })
+        }
         ns.threading = {GAThreading: {
             taskQueue: queue,
             run() { while (queue.length) queue.shift()() },
@@ -128,7 +140,8 @@ MOCK_SDK = r'''
                 }, null)
         }}}
         ns.http = {GAHTTPApi: {sendRequest(url) { xhr.push(url) }}}
-        ns.state = {GAState: {instance: {isUnloading: false}, getGameSecret: () => 'secret', getGameKey: () => 'key'}}
+        ns.state = {GAState: {instance: {isUnloading: false}, getGameSecret: () => 'secret', getGameKey: () => 'key',
+            sessionIsStarted: () => session}}
         ns.utilities = {GAUtilities: {getHmac: (key, body) => 'hmac:' + key + ':' + body.length}}
         ns.store = {GAStore: {
             delete(kind, where) { for (let i = rows.length - 1; i >= 0; i--)
@@ -444,6 +457,59 @@ class GameAnalyticsBackendTest(unittest.TestCase):
         self.assertEqual(errors['page'], [])
         self.evidence['cases']['pagehide_flush'] = {'handed_at_pagehide': handed, 'keepalive_body': body,
                                                     'xhr': state['xhr'], 'pass': True}
+
+    def test_09_bfcache_pageshow_reopens_the_session(self):
+        page, errors = self.boot(mode='threaded')
+        hide = "() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: true}))"
+        show = "persisted => window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted}))"
+        page.evaluate(hide)
+        page.wait_for_timeout(200)
+        self.assertEqual(page.evaluate('() => __gaFetch.length'), 1)
+        mark = len(self.calls(page))
+        # A pageshow that is not a bfcache restore changes nothing
+        page.evaluate(show, False)
+        page.evaluate("() => ANALYTICS.design('ui:pause:open:user')")
+        self.assertEqual(self.calls(page)[mark:], [], 'calls reached GameAnalytics before the restore')
+        page.evaluate(show, True)
+        page.evaluate("() => ANALYTICS.design('ui:pause:open:user')")
+        page.wait_for_timeout(600)
+        waiting = self.calls(page)[mark:]
+        self.assertEqual(waiting, [['startSession', []]], 'events went out before the new session started')
+        # The GA thread runs the startSession task: the new session starts, the queue goes out
+        page.evaluate('() => gameanalytics.threading.GAThreading.run()')
+        page.wait_for_timeout(600)
+        after = self.calls(page)[mark:]
+        self.assertIn('session_start', page.evaluate('() => __gaThreaded.ran'))
+        self.assertEqual(after[1], ['addProgressionEvent', [1, 'grapple_over', '', '']],
+                         'the run in progress did not start again')
+        self.assertIn(['addDesignEvent', ['ui:pause:open:user']], after)
+        self.assertEqual([c[0] for c in after].count('startSession'), 1)
+        # A second persisted pageshow (no pagehide between) starts nothing
+        n = len(self.calls(page))
+        page.evaluate(show, True)
+        page.wait_for_timeout(400)
+        self.assertEqual(self.calls(page)[n:], [])
+        # The next pagehide hands the quit-time events and ends the session again
+        page.evaluate("() => gameanalytics.threading.GAThreading.run()")
+        page.evaluate(hide)
+        page.wait_for_timeout(300)
+        second = self.calls(page)[n:]
+        names = [c[0] for c in second]
+        self.assertIn('endSession', names)
+        handed = [('design:' + c[1][0]) if c[0] == 'addDesignEvent' else 'progression:' + ':'.join(map(str, c[1][:3]))
+                  for c in second[:names.index('endSession')] if c[0] in ('addDesignEvent', 'addProgressionEvent')]
+        self.assertTrue(any(h.startswith('design:quit:') for h in handed), handed)
+        self.assertIn('progression:3:grapple_over:', handed)
+        state = page.evaluate('() => ({fetch: __gaFetch, xhr: __gaThreaded.xhr, ran: __gaThreaded.ran})')
+        self.assertEqual(len(state['fetch']), 2, 'the second pagehide sent no keepalive batch')
+        body = json.loads(state['fetch'][1]['body'])
+        self.assertEqual(body[-1], 'session_end')
+        for h in handed:
+            self.assertIn(h, body)
+        self.assertEqual(state['ran'].count('session_end'), 2)
+        self.assertEqual(errors['page'], [])
+        self.evidence['cases']['bfcache_pageshow'] = {'after_restore': after, 'handed_at_second_pagehide': handed,
+                                                      'second_keepalive_body': body, 'pass': True}
 
 
 if __name__ == '__main__':

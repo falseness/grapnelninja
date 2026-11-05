@@ -10,6 +10,11 @@
   design('quit:<type>:<section>'),
   progression('Fail', mode, section) when a section is in progress, then
   sessionEnd last.
+- TASK-907: pageshow(persisted) after that pagehide (a back/forward-cache
+  restore) reopens it: sessionStart, then progression Start for the run and
+  the section the pagehide failed; the next pagehide sends quit:*, the Fails
+  and sessionEnd again. A non-persisted pageshow and a second persisted one
+  send nothing.
 
 The run plays in real time (~3 s single, ~2 s double, ~2 s paused), then
 the frame loop is frozen and a fall is driven through production physics()
@@ -130,6 +135,38 @@ class QuitTests(unittest.TestCase):
         page.evaluate(PAGEHIDE)
         self.assertEqual(page.evaluate(LOG, end), [])
         OUT.extend(page.evaluate(LOG, switch))
+        page.close()
+
+    def test_01_b_bfcache_pageshow_reopens_telemetry(self):
+        page = self.browser.new_page(viewport={'width': 1280, 'height': 720})
+        page.on('pageerror', lambda e: self.errors.append(str(e)))
+        page.goto(self.url)
+        wait_for_boot_run(page)
+        page.wait_for_timeout(1000)
+        progress = page.evaluate('({id: CLIMB_UI.progression.id, open: CLIMB_UI.progression.open, '
+                                 'run: CLIMB_UI.progression.run})')
+        self.assertTrue(progress['run'] and progress['open'], progress)
+        show = "persisted => window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted}))"
+        page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: true}))")
+        first = page.evaluate('ANALYTICS.debugLog.length')
+        page.evaluate(show, False)
+        self.assertEqual(page.evaluate(LOG, first), [], 'a non-bfcache pageshow sent events')
+        page.evaluate(show, True)
+        restored = page.evaluate(LOG, first)
+        self.assertEqual(restored[0]['fn'], 'startSession', restored)
+        self.assertEqual([e['args'] for e in restored if e['fn'] == 'addProgressionEvent'],
+                         [['Start', 'grapple_over', None], ['Start', 'grapple_over', progress['id']]])
+        self.assertTrue(page.evaluate('CLIMB_UI.progression.run && CLIMB_UI.progression.open'))
+        again = page.evaluate('ANALYTICS.debugLog.length')
+        page.evaluate(show, True)
+        self.assertEqual(page.evaluate(LOG, again), [], 'a second persisted pageshow sent events')
+        page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: true}))")
+        tail = page.evaluate(LOG, again)
+        self.assertEqual(tail[-1]['fn'], 'endSession', tail)
+        self.assertEqual(len(design(tail, 'quit:')), 1, tail)
+        self.assertEqual([e['args'] for e in tail if e['fn'] == 'addProgressionEvent'],
+                         [['Fail', 'grapple_over', progress['id']], ['Fail', 'grapple_over', None]])
+        OUT.append({'bfcache_restore': restored, 'second_pagehide': tail})
         page.close()
 
     def test_02_no_page_errors(self):
