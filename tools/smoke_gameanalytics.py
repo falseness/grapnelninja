@@ -101,22 +101,32 @@ class Quiet(SimpleHTTPRequestHandler):
 GA_RELAY_HOSTS = ('stats.playdiplomacy.online',)
 
 
+def is_init(url):
+    path = urlparse(url).path
+    return path.endswith('/init') or path == '/r/i'
+
+
+def is_events(url):
+    path = urlparse(url).path
+    return path.endswith('/events') or (path.startswith('/q/') and path.endswith('/e'))
+
+
 def is_ga(url):
     host = urlparse(url).hostname or ''
     return host == 'gameanalytics.com' or host.endswith('.gameanalytics.com') or host in GA_RELAY_HOSTS
 
 
 def init_ok(rows):
-    return any('/init' in r['url'] and r['status'] and 200 <= r['status'] < 300 for r in rows)
+    return any(is_init(r['url']) and r['status'] and 200 <= r['status'] < 300 for r in rows)
 
 
 def session_ok(rows):
-    return init_ok(rows) and any(r['url'].endswith('/events') and r['status'] == 200
+    return init_ok(rows) and any(is_events(r['url']) and r['status'] == 200
                                  and 'user' in (r.get('categories') or []) for r in rows)
 
 
 def env_ok(rows):
-    return any(r['url'].endswith('/events') and r['status'] == 200
+    return any(is_events(r['url']) and r['status'] == 200
                and any(str(c).startswith('design:env:') for c in r.get('categories') or []) for r in rows)
 
 
@@ -164,7 +174,7 @@ RECORD_PHASES = r'''() => {
     const fetchOrig = window.fetch
     window.fetch = function(url, init) {
         try {
-            if (/gameanalytics\.com\/.*\/events$/.test(String(url))) {
+            if (/(gameanalytics\.com\/.*\/events|stats\.playdiplomacy\.online\/q\/[0-9a-f]{32}\/e)$/.test(String(url))) {
                 const rows = JSON.parse(init.body)
                 window.__gaFetch.push({phase: window.__gaPhase, url: String(url), auth: init.headers.Authorization,
                     keepalive: !!init.keepalive, categories: rows.map(e => e.category + ((e.category === 'design' ||
@@ -177,7 +187,7 @@ RECORD_PHASES = r'''() => {
 
 
 def delivered_200(rows):
-    return [c for r in rows if r['url'].endswith('/events') and r['status'] == 200 for c in r.get('categories') or []]
+    return [c for r in rows if is_events(r['url']) and r['status'] == 200 for c in r.get('categories') or []]
 
 
 def bfcache_verdict(calls, rows, marks, restored):
@@ -209,7 +219,7 @@ def bfcache_verdict(calls, rows, marks, restored):
         'restore_design_events': [e for e in expected_restore if e.startswith('design:')],
         'restore_expected': expected_restore,
         'restore_missing': missing,
-        'restore_session_user_event_200': any(r['url'].endswith('/events') and r['status'] == 200
+        'restore_session_user_event_200': any(is_events(r['url']) and r['status'] == 200
                                               and 'user' in (r.get('categories') or []) for r in restore_rows),
         'delivered_twice_after_restore': twice,
         'leave1_quit': leave1,
@@ -258,7 +268,7 @@ def hidden_verdict(calls, rows, hidden_t, visible_t, end_t):
     visible_ids = [event_id(fn, a) for ph, fn, a in calls if ph == 'visible' and event_id(fn, a)]
     hide_ids = [e for e in hidden_ids if e.startswith(('design:hide:', 'design:hide_long_fall:',
                                                         'design:longest_fall:hide'))]
-    ok_rows = [r for r in rows if r['url'].endswith('/events') and r['status'] == 200 and 't' in r]
+    ok_rows = [r for r in rows if is_events(r['url']) and r['status'] == 200 and 't' in r]
     fast = [c for r in ok_rows if r['t'] <= hidden_t + 2.0 for c in r.get('categories') or []]
     hide_rows = [r for r in ok_rows if set(hide_ids) & set(r.get('categories') or [])]
     hide_sessions = sorted({sid for r in hide_rows for sid in r.get('sessions') or []})
@@ -310,7 +320,7 @@ def quit_verdict(calls, rows):
     expected = [event_id(fn, a) for fn, a in calls[:end] if event_id(fn, a)]
     after_end = [event_id(fn, a) for fn, a in calls[end + 1:] if event_id(fn, a)]
     after_stored = [event_id(fn, a) for fn, a in calls[stored + 1:] if event_id(fn, a)]
-    delivered = [c for r in rows if r['url'].endswith('/events') and r['status'] == 200
+    delivered = [c for r in rows if is_events(r['url']) and r['status'] == 200
                  for c in r.get('categories') or []]
     pool = list(delivered)
     missing = []
@@ -437,7 +447,7 @@ def main(argv=None):
                 row = {'t': round(time.time() - started, 2), 'method': response.request.method,
                        'url': redact(response.url), 'status': response.status,
                        'type': response.request.resource_type}
-                if response.url.endswith('/events'):
+                if is_events(response.url):
                     row['categories'] = categories(response.request)
                     if args.hidden:
                         row['sessions'] = sessions(response.request)
@@ -450,7 +460,7 @@ def main(argv=None):
                 rows.append({'t': round(time.time() - started, 2), 'method': request.method,
                              'url': redact(request.url), 'status': None, 'type': request.resource_type,
                              'failure': request.failure,
-                             'categories': categories(request) if request.url.endswith('/events') else None})
+                             'categories': categories(request) if is_events(request.url) else None})
         # --bfcache: GA requests DevTools never answered (a page in the bfcache)
         unanswered = {}
         page_fetches = []
@@ -589,7 +599,7 @@ def main(argv=None):
         context.close()
         browser.close()
         for t, request in unanswered.values():
-            if request.method == 'POST' and request.url.endswith('/events'):
+            if request.method == 'POST' and is_events(request.url):
                 failed_raw[len(rows)] = (request.url, (request.headers or {}).get('authorization'))
                 rows.append({'t': t, 'method': request.method, 'url': redact(request.url), 'status': None,
                              'type': request.resource_type, 'failure': 'no response in DevTools (page in bfcache)',
@@ -599,7 +609,7 @@ def main(argv=None):
     if args.quit or args.bfcache:
         logged = netlog_requests(netlog) if netlog.exists() else []
         auths = {auth for _, auth in failed_raw.values() if auth}
-        netlog_summary = [{'method': r.get('method'), 'events': r['url'].endswith('/events'),
+        netlog_summary = [{'method': r.get('method'), 'events': is_events(r['url']),
                            'status': r.get('status'), 'has_auth': bool(r.get('auth')),
                            'auth_matches_failed_request': r.get('auth') in auths}
                           for r in logged if is_ga(r['url']) and r.get('method') != 'OPTIONS']
@@ -631,8 +641,8 @@ def main(argv=None):
         rows.sort(key=lambda r: r['t'])
         leave_at = next(i for i, r in enumerate(rows) if r.get('marker') == 'leave1')
 
-    init = [r for r in rows if '/init' in r['url']]
-    events = [r for r in rows if r['url'].endswith('/events')]
+    init = [r for r in rows if is_init(r['url'])]
+    events = [r for r in rows if is_events(r['url'])]
     report = {
         'zip': str(args.zip.relative_to(ROOT) if args.zip.is_relative_to(ROOT) else args.zip),
         'state': state,
