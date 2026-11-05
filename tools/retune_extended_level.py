@@ -2910,6 +2910,42 @@ def mirror_opening_p1(m, opening):
             c.update(minimumGap=d, passOutsideRange=d-21.6 > 540)
 
 
+def centroid_x(f):
+    """Absolute x of the area centroid of fragment f's bodies (shoelace, all bodies together)."""
+    a = cx = 0.
+    for poly in f['polys']:
+        for (x0, y0), (x1, y1) in zip(poly, poly[1:] + poly[:1]):
+            c = x0*y1 - x1*y0
+            a += c; cx += (x0+x1)*c
+    return f['x'] + cx/(3*a)
+
+
+def shift_opening_p1(m, unmirrored_x):
+    """Shift the mirrored P1 right so its polygon centroid x is the unmirrored P1's (unmirrored_x), as the shipped
+    hotfix did (+95.67: its mass sits where the island was). Only the geometry moves: the displayed transfer
+    percent and guide keep the mirror's values (the hotfix kept them); the measured gaps are re-measured into
+    distance / witness / pairChecks and recorded in m['p1Shift']."""
+    f = next(f for f in m['fragments'] if f['semanticId'] == 'P1')
+    dx = unmirrored_x - centroid_x(f)
+    f['x'] += dx
+    fs = m['fragments']; i = fs.index(f); gaps = {}
+    for row in m['encounters']:
+        n = row['number']
+        if n - 1 != i and n != i:
+            continue
+        a, b = fs[n-1:n+1]
+        d, w, _, _ = gap(a, b)
+        if row.get('originalNumber', n) not in TARGETS and d < 1080 - .01:
+            raise ValueError('Shifted P1: transfer %s gap %.2f below the 200%% release-gap minimum' % (row['id'], d))
+        row.update(distance=d, witness=w); gaps[row['id']] = d
+    for c in m['pairChecks']:
+        if f['id'] in (c['source'], c['target']):
+            other = next(x for x in fs if x['id'] == (c['target'] if c['source'] == f['id'] else c['source']))
+            d = gap(f, other)[0]
+            c.update(minimumGap=d, passOutsideRange=d-21.6 > 540)
+    m['p1Shift'] = dict(fragment=f['id'], dx=dx, x=f['x'], centroidX=unmirrored_x, gaps=gaps)
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source',help='concept measurements JSON (required unless --big-zone-fixture)')
@@ -2958,6 +2994,9 @@ def main():
                     help='(shipped run) mirror the second opening island P1 left-right about its own centre, so its '
                          'deep end faces the spawn (players fell at the start). Same layout id, saves kept. '
                          '--no-mirror-p1 gives the previous shipped v22 byte for byte')
+    ap.add_argument('--p1-shift', action=argparse.BooleanOptionalAction, default=True,
+                    help='(shipped run, with --mirror-p1) shift the mirrored P1 right so its polygon centroid x is the '
+                         'unmirrored one (+95.67, the shipped hotfix). --no-p1-shift gives the unshifted mirror')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -3030,7 +3069,11 @@ def main():
     if not args.ext_summit and (args.ext_summit_fold or args.ext_summit_riser or args.ext_summit_gauntlet):
         raise ValueError('--ext-summit-fold / --ext-summit-riser / --ext-summit-gauntlet need --ext-summit')
     if shipped and args.mirror_p1:
+        p1 = next(f for f in m['fragments'] if f['semanticId'] == 'P1')
+        unmirrored_x = centroid_x(p1)
         mirror_opening_p1(m, opening)
+        if args.p1_shift:
+            shift_opening_p1(m, unmirrored_x)
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);
