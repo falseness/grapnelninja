@@ -11,7 +11,7 @@ const LONG_FALL_HINT_KEY = 'climb.fallHint'
 // with the go-back checkpoint above the player pauses on the 'Go back?'
 // dialog (CLIMB_UI.offerGoBack). After 'Keep falling' it is offered again
 // once the player is this far below the point where it was shown.
-const GO_BACK_FALL_THRESHOLD = 10000
+const GO_BACK_FALL_THRESHOLD = 4200
 
 const LONG_FALL = (function()
 {

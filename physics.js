@@ -86,8 +86,9 @@ function calcPhysics()
         if (grapnel.isGrappled())
         {
             let ratio = grapnel.calcSpeed({x: grapnel.pos[grapnel.pos.length - 1][0], y: grapnel.pos[grapnel.pos.length - 1][1]})
-            ninja.speedX += grappleSpeed * ratio.cos
-            ninja.speedY += grappleSpeed * ratio.sin
+            const pull = version === 'grapple_over' ? grappleSpeed * GAMEPLAY.grappleOverPullScale : grappleSpeed
+            ninja.speedX += pull * ratio.cos
+            ninja.speedY += pull * ratio.sin
         }
         grapnel.collision()
     }
