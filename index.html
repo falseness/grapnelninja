@@ -333,6 +333,15 @@
                 }
                 PLATFORM.loadingProgress(25)
                 ctx = canvas.getContext('2d', {alpha: false})
+                // A lost canvas (the phone reclaimed its GPU memory) draws blank and its
+                // cached images are gone: reload once it is back (pagehide saves the climb),
+                // or after 3 s if it never comes back
+                if (!canvas.watchingLoss)
+                {
+                    canvas.watchingLoss = true
+                    canvas.addEventListener('contextlost', () => setTimeout(() => location.reload(), 3000))
+                    canvas.addEventListener('contextrestored', () => location.reload())
+                }
                 ctx.lineCap = 'butt'
                 fpsCounter = new FpsCounter()
                 menu = new Menu(width, height)

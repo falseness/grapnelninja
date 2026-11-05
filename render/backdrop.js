@@ -28,7 +28,9 @@ const BACKDROP = (function()
     // Longer gaps are pauses, hidden tabs or ads, not frame time
     const MAX_FRAME_GAP_MS = 250
     // Canvas resolution after the fast backdrop, one step per slow window
-    const RESOLUTION_STEPS = [0.75, 0.5]
+    // No canvas resolution steps: a resize mid-game wipes the canvas and
+    // rebuilds every cache (a white flash and a long freeze on phones)
+    const RESOLUTION_STEPS = []
     // Backing px per CSS px never goes below this
     const MIN_DEVICE_RESOLUTION = 0.6
     // A step rebuilds caches and sprites: its first frames are not judged

@@ -42,7 +42,10 @@ const GRADIENT_DITHER = (function()
         }
     }
     return {
-        enabled: new URLSearchParams(location.search).get('gradientdither') !== '0' && probe(),
+        // Off on touch-first devices: phones paint gradients straight into
+        // 8-bit canvases (no float16 scratch, less GPU memory)
+        enabled: new URLSearchParams(location.search).get('gradientdither') !== '0' &&
+            !(typeof isTouchFirstDevice == 'function' && isTouchFirstDevice()) && probe(),
         // Seeded noise, each channel on its own (and float16 NOISE_SIZE
         // square tiles of it, opaque): 'white' uniform in [-0.5, 0.5) grey levels; 'blue' that
         // noise minus the mean of its 4 neighbours, at BLUE_RMS: anticorrelated
