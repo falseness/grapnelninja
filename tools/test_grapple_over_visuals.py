@@ -176,6 +176,43 @@ LEGACY_V3_QUERY = '?grappleFixture=legacy-v3'
 REPLACEMENT_V1_QUERY = '?grappleFixture=replacement-v1'
 
 
+
+# TASK-903: the TASK-639..645 baselines overlay style.js from an old revision.
+# Since TASK-890 boot() prebuilds the tutorial legend, which reads role-detail
+# keys the old style.js lacks (bounce.baseLight), so the old file no longer
+# boots. Serve today's style.js with GRAPPLE_OVER_ROLE_DETAIL taken from the old
+# revision (its values win; keys it lacks are filled from today's): the baseline
+# still isolates the role-detail change and boots on today's code.
+def baseline_style_js(rev):
+    old = subprocess.check_output(['git', 'show', rev + ':style.js'], text=True, cwd=ROOT)
+    now = (ROOT / 'style.js').read_text()
+    decl = 'const GRAPPLE_OVER_ROLE_DETAIL = '
+    assert now.count(decl) == 1 and old.count(decl) == 1, 'GRAPPLE_OVER_ROLE_DETAIL declaration'
+    now = now.replace(decl, 'const GRAPPLE_OVER_ROLE_DETAIL_NOW = ')
+    return now + '''
+const GRAPPLE_OVER_ROLE_DETAIL = (() => {
+    const base = (function () {
+%s
+    return GRAPPLE_OVER_ROLE_DETAIL
+    })()
+    const plain = v => v !== null && typeof v === 'object' && !Array.isArray(v)
+    const merge = (b, n) => {
+        if (!plain(b) || !plain(n)) return b === undefined ? n : b
+        const out = {}
+        for (const k of new Set([...Object.keys(n), ...Object.keys(b)])) out[k] = merge(b[k], n[k])
+        return Object.freeze(out)
+    }
+    return merge(base, GRAPPLE_OVER_ROLE_DETAIL_NOW)
+})()
+''' % old
+
+
+def baseline_runtime_js(rev, name):
+    if name == 'style.js':
+        return baseline_style_js(rev)
+    return subprocess.check_output(['git', 'show', rev + ':' + name], text=True, cwd=ROOT)
+
+
 def serve_rev(rev, add_cleanup):
     """URL and full sha of a `git archive` copy of rev served on a local port."""
     from functools import partial
@@ -2444,7 +2481,7 @@ class Task639Tests(unittest.TestCase):
         self.addCleanup(context.close)
         if baseline:
             for name in ('render/roledetail.js', 'style.js'):
-                body = subprocess.check_output(['git', 'show', '5850cbe9742793e93e8b1659a66023b3c9fcacb8' + ':' + name], text=True)
+                body = baseline_runtime_js('5850cbe9742793e93e8b1659a66023b3c9fcacb8', name)
                 context.route('**/' + name, lambda route, request, body=body: route.fulfill(body=body, content_type='application/javascript'))
         page = context.new_page()
         errors = []
@@ -2595,7 +2632,7 @@ class Task640Tests(unittest.TestCase):
         self.addCleanup(context.close)
         if baseline:
             for name in ('render/roledetail.js', 'style.js'):
-                body = subprocess.check_output(['git', 'show', 'b21743795ed36f965f06da3549cc60511740ad32:' + name], text=True)
+                body = baseline_runtime_js('b21743795ed36f965f06da3549cc60511740ad32', name)
                 context.route('**/' + name, lambda route, request, body=body: route.fulfill(body=body, content_type='application/javascript'))
         page = context.new_page()
         errors = []
@@ -2747,7 +2784,7 @@ class Task641Tests(unittest.TestCase):
         self.addCleanup(context.close)
         if baseline:
             for name in ('render/roledetail.js', 'style.js', 'sprites/ninja.js'):
-                body = subprocess.check_output(['git', 'show', '0c39fb7ff39d5410b0ea5feb612fb5660727b219:' + name], text=True)
+                body = baseline_runtime_js('0c39fb7ff39d5410b0ea5feb612fb5660727b219', name)
                 context.route('**/' + name, lambda route, request, body=body: route.fulfill(body=body, content_type='application/javascript'))
         page = context.new_page()
         errors = []
@@ -3139,7 +3176,7 @@ class Task644Tests(unittest.TestCase):
         context = browser.new_context(viewport=viewport, device_scale_factor=1)
         if baseline:
             for path in self.RUNTIME:
-                body = subprocess.check_output(['git', 'show', self.BASE + ':' + path], text=True)
+                body = baseline_runtime_js(self.BASE, path)
                 context.route('**/' + path, lambda route, request, body=body:
                               route.fulfill(body=body, content_type='application/javascript'))
         page = context.new_page()
