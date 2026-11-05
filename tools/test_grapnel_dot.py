@@ -68,10 +68,23 @@ def radius(image):
     return {'radius': float(np.median(radii)), 'eight_radii': radii}
 
 
-NATIVE = '''() => {
+NATIVE = '''async () => {
     grapnel.throwed = grapnel.grappled = true;
     // A fixed attached fixture, drawn by the full production renderer without physics steps.
     grapnel.pos = [[ninja.x + 110/scale[version], ninja.y - 70/scale[version]]];
+    // TASK-901: the frame must not depend on boot timing. Fonts settled, deferred glyph
+    // glow and background bakes drained (as test_inner_glow, TASK-895), then the HUD glyph
+    // metrics and sprites measured during boot are dropped: under host load a boot-time
+    // measureText came back 1 px off (artifacts/TASK-901/cause.md), shifting the HUD glow.
+    // draw() (not a live frame) measures and builds them again.
+    if (document.fonts) await document.fonts.ready;
+    // (The e430f92 reference tree predates these queues and the glyph atlas.)
+    for (let i = 0; i < 500 && typeof GLYPH_GLOW_QUEUE !== 'undefined' && GLYPH_GLOW_QUEUE.pending.size; i++)
+        buildPendingGlyphSprites(Infinity);
+    for (let i = 0; i < 500 && typeof backgroundBakesPending === 'function' && backgroundBakesPending(); i++) draw();
+    if (typeof GLYPH_SPRITES !== 'undefined') {
+        GLYPH_SPRITES.metrics.clear(); GLYPH_SPRITES.cache.clear(); GLYPH_SPRITES.pages.length = 0;
+    }
     draw();
     const transform = ctx.getTransform(), dpr = canvas.width/innerWidth;
     const point = new DOMPoint((grapnel.pos[0][0]+screen.x)*scale[version],
