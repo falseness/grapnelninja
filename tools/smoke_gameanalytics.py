@@ -96,9 +96,14 @@ class Quiet(SimpleHTTPRequestHandler):
         pass
 
 
+# The game reaches GameAnalytics through its first-party relay
+# (GA_COLLECTOR_HOST in analytics/backends/gameanalytics.js)
+GA_RELAY_HOSTS = ('stats.playdiplomacy.online',)
+
+
 def is_ga(url):
     host = urlparse(url).hostname or ''
-    return host == 'gameanalytics.com' or host.endswith('.gameanalytics.com')
+    return host == 'gameanalytics.com' or host.endswith('.gameanalytics.com') or host in GA_RELAY_HOSTS
 
 
 def init_ok(rows):
