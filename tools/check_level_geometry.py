@@ -737,17 +737,27 @@ def apply_x_range(report, level, lo, hi):
     return report
 
 
-def check_green_sides(level, minimum):
-    """Rows for the --green-min-side rule: role 'bounce' polygon edges shorter than minimum - COORD_TOL."""
-    lengths, violations = [], []
+# Accepted exceptions to --green-min-side (element id -> its own floor). Shipped v23: P89 (Z3-B7) cannot reach
+# 540 + 5 without breaking the yellow 1620 / grapple-shortcut rules; it keeps 339-366 (user decision 2026-11-06).
+GREEN_MIN_SIDE_EXCEPTIONS = {'P89-body0': 330.0}
+
+
+def check_green_sides(level, minimum, exceptions=None):
+    """Rows for the --green-min-side rule: role 'bounce' polygon edges shorter than minimum - COORD_TOL.
+    An element in exceptions is held to its own floor instead and its short edges are listed under 'excepted'."""
+    exceptions = GREEN_MIN_SIDE_EXCEPTIONS if exceptions is None else exceptions
+    lengths, violations, excepted = [], [], []
     for eid, (element, poly) in sorted(level_polygons(level).items()):
         if element.get('role') != 'bounce':
             continue
+        floor = min(minimum, exceptions.get(eid, minimum))
         for i, length in enumerate(side_lengths(poly)):
             lengths.append(length)
-            if length < minimum - COORD_TOL:
+            if length < floor - COORD_TOL:
                 violations.append({'element': eid, 'edge': i, 'length': r(length)})
-    return {'minimum': minimum, 'edges': len(lengths), 'violations': violations,
+            elif length < minimum - COORD_TOL:
+                excepted.append({'element': eid, 'edge': i, 'length': r(length), 'floor': floor})
+    return {'minimum': minimum, 'edges': len(lengths), 'violations': violations, 'excepted': excepted,
             'minGreenSide': r(min(lengths)) if lengths else None}
 
 
@@ -761,7 +771,8 @@ def apply_green_min_side(report, level, minimum):
     s.update({'greenMinSide': minimum, 'greenSideEdges': result['edges'],
               'greenSideViolationCount': len(result['violations']),
               'greenSideViolationElements': len({v['element'] for v in result['violations']}),
-              'minGreenSide': result['minGreenSide'], 'greenSideViolations': result['violations']})
+              'minGreenSide': result['minGreenSide'], 'greenSideViolations': result['violations'],
+              'greenSideExcepted': result['excepted']})
     s['pass'], s['failures'] = not report['failureMessages'], len(report['failureMessages'])
     return report
 

@@ -1,5 +1,18 @@
 # Generated level
 
+Layout `extended-mountain-v23` (shipped 2026-11-06) is the default generator
+output: v22 (below) plus `--green-min-side 540`, the last step, which grows
+every green (role `bounce`) body until each side is >= 545 (1 grapple length
+R = 540, plus 5). Bodies keep their place and contact face; growth goes away
+from the contact face and stays inside the yellow 1,620 clearance, the
+grapple-shortcut rule, FOLD_X_RANGE and the no-grapple rest rule. This rule is
+separate from the 270 minimum for every role. One accepted exception: P89
+(Z3-B7) cannot reach it under those rules and keeps sides 339-366
+(`GREEN_MIN_SIDE_EXCEPTIONS` in `tools/check_level_geometry.py`, floor 330).
+Check: `tools/check_level_geometry.py --sides-only --level leveldata.js
+--green-min-side 540`. `--no-green-min-side` gives v22 byte for byte. v22
+saves restart at the spawn.
+
 Layout `extended-mountain-v22` (shipped, TASK-781) is the default generator
 output (`tools/retune_extended_level.py` with no layout flag =
 `--min-side-scope all --middle-purple --upper-purple --purple-rest

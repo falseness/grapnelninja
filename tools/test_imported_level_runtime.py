@@ -38,7 +38,7 @@ import convert_extended_mountain_svg as svg_conv
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v22'
+LAYOUT_ID = 'extended-mountain-v23'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -578,6 +578,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # TASK-727/728 added the ?visualsPerf=1 freeze recorder (render/visualsperf.js) and moved the ?perf=1 layer
         # table to a shared PERF_LAYERS (render/perfprofile.js): instrumentation only, nothing runs without the flags.
         # TASK-755 drew the HUD text from glyph sprites (sprites/scoretext.js drawHudText -> drawGlowGlyphs): display only.
+        # 2026-11-06 (fc36f9b) emptied render/backdrop.js RESOLUTION_STEPS (phone flicker fix): display resolution only.
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
                                                                                       ':!render/tutorialhint.js', ':!render/roledetail.js',
                                                                                       ':!render/fallmessage.js', ':!sprites/trampoline.js',
@@ -585,7 +586,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                                                                       ':!render/effects.js', ':!render/parallax.js',
                                                                                       ':!render/glowsprites.js', ':!render/landmarks.js',
                                                                                       ':!sprites/grapnel.js', ':!render/perfprofile.js',
-                                                                                      ':!render/visualsperf.js', ':!sprites/scoretext.js'],
+                                                                                      ':!render/visualsperf.js', ':!sprites/scoretext.js',
+                                                                                      ':!render/backdrop.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,
@@ -602,7 +604,15 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                                    "+    if (version === 'grapple_over')", '+        drawFallMessageLayer()']))
         design = PHYSICS_FALL_RECOVERY_DIFF.index('+// Design telemetry of the run, never saved: the last 500-unit best height')
         teleport = PHYSICS_FALL_RECOVERY_DIFF.index('+// Teleport a fallen Grapple Over player to the spawn and launch it upward')
-        self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF[:3] + SPAWN_LAUNCH_DIFF + PHYSICS_FALL_RECOVERY_DIFF[3:design]
+        # 2026-11-05 (63c527c): the Grapple Over grapnel pull scale (GAMEPLAY.grappleOverPullScale), these 5 lines only.
+        PULL_SCALE_DIFF = ['-            ninja.speedX += grappleSpeed * ratio.cos',
+                           '-            ninja.speedY += grappleSpeed * ratio.sin',
+                           "+            const pull = version === 'grapple_over' ? grappleSpeed * GAMEPLAY.grappleOverPullScale : grappleSpeed",
+                           '+            ninja.speedX += pull * ratio.cos',
+                           '+            ninja.speedY += pull * ratio.sin']
+        physics_lines = lines('physics.js')
+        at = next(i for i in range(len(physics_lines)) if physics_lines[i:i + 5] == PULL_SCALE_DIFF)
+        self.assertEqual(physics_lines[:at] + physics_lines[at + 5:], PHYSICS_FALL_RECOVERY_DIFF[:3] + SPAWN_LAUNCH_DIFF + PHYSICS_FALL_RECOVERY_DIFF[3:design]
                          + GO_BACK_CHECKPOINT_DIFF + PHYSICS_FALL_RECOVERY_DIFF[design:teleport]
                          + RETURN_TO_CHECKPOINT_DIFF + PHYSICS_FALL_RECOVERY_DIFF[teleport:])
         self.assertEqual(lines('sprites/trampoline.js'), TRAMPOLINE_CLOSE_DIFF)
@@ -749,6 +759,16 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+                    ANALYTICS.sessionStart()',
                                    '+                }',
                                    '+                PLATFORM.loadingProgress(25)',
+                                   # 2026-11-05 instant start (boot crossfade) and phone flicker fix (context-loss reload); re-pinned 2026-11-06
+                                   '+                // A lost canvas (the phone reclaimed its GPU memory) draws blank and its',
+                                   '+                // cached images are gone: reload once it is back (pagehide saves the climb),',
+                                   '+                // or after 3 s if it never comes back',
+                                   '+                if (!canvas.watchingLoss)',
+                                   '+                {',
+                                   '+                    canvas.watchingLoss = true',
+                                   "+                    canvas.addEventListener('contextlost', () => setTimeout(() => location.reload(), 3000))",
+                                   "+                    canvas.addEventListener('contextrestored', () => location.reload())",
+                                   '+                }',
                                    '+                PLATFORM.loadingProgress(50)',
                                    # TASK-861: env:* start events (telemetry only); re-pinned by TASK-879
                                    '+                TELEMETRY.sendEnvironment()',
@@ -810,32 +830,83 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    # re-pinned with the P1 mirror: TASK-907/908 telemetry, poster kept to the first complete frame, touch-phone rotate CSS
                                    '+                // Nothing pending before and after the frame: it drew every layer',
                                    '+                // exact and with its glow (the frame that builds them drew them cheap)',
-                                   '+                const completeBefore = BACKGROUND_BAKE_QUEUE.hidden && bootPictureComplete()',
+                                   # 2026-11-05 instant start (boot crossfade) and phone flicker fix (context-loss reload); re-pinned 2026-11-06
+                                   '+                const boot = BACKGROUND_BAKE_QUEUE.hidden',
+                                   '+                const completeBefore = boot && bootPictureComplete()',
+                                   "+                const signature = boot ? bootBakeSignature() : ''",
                                    '+                GLYPH_GLOW_QUEUE.defer = true',
                                    '+                try { gameLoopFrame(frameTime) }',
                                    '+                finally { GLYPH_GLOW_QUEUE.defer = false }',
                                    # TASK-892: the poster goes after the first gameLoop frame (display only); pinned by TASK-895
                                    # re-pinned with the P1 mirror: TASK-907/908 telemetry, poster kept to the first complete frame, touch-phone rotate CSS
-                                   '+                // The poster goes before the paint of the first complete frame',
-                                   '+                if (BACKGROUND_BAKE_QUEUE.hidden &&',
-                                   '+                    ((completeBefore && bootPictureComplete()) || ++posterFrames >= POSTER_MAX_FRAMES))',
-                                   '+                    removePoster()',
+                                   # 2026-11-05 instant start (boot crossfade) and phone flicker fix (context-loss reload); re-pinned 2026-11-06
+                                   '+                // Instant start: the poster goes after the first frame (cheap',
+                                   '+                // layers); the exact ones are built one per frame and fade in',
+                                   '+                removePoster()',
+                                   '+                drawBootFade(frameTime)',
+                                   '+                if (boot)',
+                                   '+                {',
+                                   '+                    // This frame built something: the next one looks different,',
+                                   "+                    // so it fades in over this frame's picture",
+                                   '+                    if (bootBakeSignature() !== signature)',
+                                   '+                        startBootFade(frameTime)',
+                                   '+                    if ((completeBefore && bootPictureComplete()) || ++posterFrames >= POSTER_MAX_FRAMES)',
+                                   '+                        BACKGROUND_BAKE_QUEUE.hidden = false',
+                                   '+                }',
                                    '+                game = requestAnimationFrame(gameLoop)',
                                    '+            }',
                                    # TASK-892: removePoster() (display only); pinned by TASK-895
                                    # re-pinned with the P1 mirror: TASK-907/908 telemetry, poster kept to the first complete frame, touch-phone rotate CSS
-                                   '+            // TASK-892: the static poster of index.html (#poster). Kept over the',
-                                   '+            // stage while the boot frames build their deferred caches',
-                                   '+            // (render/glowsprites.js BACKGROUND_BAKE_QUEUE), at most',
-                                   '+            // POSTER_MAX_FRAMES game frames',
+                                   # 2026-11-05 instant start (boot crossfade) and phone flicker fix (context-loss reload); re-pinned 2026-11-06
+                                   '+            // TASK-892: the static poster of index.html (#poster), removed after',
+                                   '+            // the first game frame. Boot mode (render/glowsprites.js',
+                                   '+            // BACKGROUND_BAKE_QUEUE.hidden) lasts until the exact layers are',
+                                   '+            // built, at most POSTER_MAX_FRAMES game frames',
                                    '+            const POSTER_MAX_FRAMES = 240',
                                    '+            let posterFrames = 0',
                                    '+            function removePoster()',
                                    '+            {',
                                    # re-pinned with the P1 mirror: TASK-907/908 telemetry, poster kept to the first complete frame, touch-phone rotate CSS
-                                   '+                BACKGROUND_BAKE_QUEUE.hidden = false',
                                    "+                const poster = document.getElementById('poster')",
                                    '+                if (poster) poster.remove()',
+                                   # 2026-11-05 instant start (boot crossfade) and phone flicker fix (context-loss reload); re-pinned 2026-11-06
+                                   '+            }',
+                                   '+            // Boot crossfade: a copy of the last cheap picture drawn over the',
+                                   '+            // new frames, fading out over BOOT_FADE.ms',
+                                   '+            const BOOT_FADE = {canvas: null, start: -1, ms: 400}',
+                                   '+            function bootBakeSignature()',
+                                   '+            {',
+                                   "+                return BACKGROUND_BAKE_QUEUE.built + '|' + BACKGROUND_BAKE_QUEUE.jobs.length + '|' +",
+                                   "+                    GRAPPLE_OVER_PARALLAX_TILES.cheap.length + '|' + GLYPH_SPRITES.cache.size",
+                                   '+            }',
+                                   '+            function startBootFade(now)',
+                                   '+            {',
+                                   "+                const copy = BOOT_FADE.canvas || (BOOT_FADE.canvas = document.createElement('canvas'))",
+                                   '+                if (copy.width !== canvas.width || copy.height !== canvas.height)',
+                                   '+                {',
+                                   '+                    copy.width = canvas.width',
+                                   '+                    copy.height = canvas.height',
+                                   '+                }',
+                                   "+                const c = copy.getContext('2d')",
+                                   '+                c.globalAlpha = 1',
+                                   '+                c.drawImage(canvas, 0, 0)',
+                                   '+                BOOT_FADE.start = now',
+                                   '+            }',
+                                   '+            function drawBootFade(now)',
+                                   '+            {',
+                                   '+                if (BOOT_FADE.start < 0 || !BOOT_FADE.canvas)',
+                                   '+                    return',
+                                   '+                const t = (now - BOOT_FADE.start) / BOOT_FADE.ms',
+                                   '+                if (t >= 1 || BOOT_FADE.canvas.width !== canvas.width || BOOT_FADE.canvas.height !== canvas.height)',
+                                   '+                {',
+                                   '+                    BOOT_FADE.start = -1',
+                                   '+                    return',
+                                   '+                }',
+                                   '+                ctx.save()',
+                                   '+                ctx.setTransform(1, 0, 0, 1, 0, 0)',
+                                   '+                ctx.globalAlpha = 1 - t',
+                                   '+                ctx.drawImage(BOOT_FADE.canvas, 0, 0)',
+                                   '+                ctx.restore()',
                                    '+            }',
                                    '+',
                                    '+            function gameLoopFrame(frameTime)',

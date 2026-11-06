@@ -410,7 +410,7 @@ class BuildReleaseTest(unittest.TestCase):
                 parts = list(build_release.bundle_parts(files))
                 self.assertEqual(parts.index(build_release.BAKED_ROUTE_ARROWS) + 1, parts.index('render/routearrows.js'))
                 table = json.loads(expected.decode().split('window.ROUTE_ARROWS_BAKED = ', 1)[1])
-                self.assertEqual(table['layoutId'], 'extended-mountain-v22')
+                self.assertEqual(table['layoutId'], 'extended-mountain-v23')
                 self.assertGreater(len(table['arrows']), 0)
                 self.assertTrue(all(a is not None for a in table['arrows']))
                 self.assertEqual(self.manifests[portal]['baked'][build_release.BAKED_ROUTE_ARROWS]['arrows'], len(table['arrows']))

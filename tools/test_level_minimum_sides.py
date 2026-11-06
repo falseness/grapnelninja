@@ -326,7 +326,9 @@ class CliTests(unittest.TestCase):
                                       '--green-min-side', '0')[0].returncode, 2)
 
     def test_green_leveldata_js(self):
-        # The bundled leveldata.js wrapper loads like the level JSON; the shipped greens are not all >= 540 yet.
+        # The bundled leveldata.js wrapper loads like the level JSON; v23 greens are >= 540 except the accepted
+        # GREEN_MIN_SIDE_EXCEPTIONS (P89, held to its own floor).
+        from check_level_geometry import GREEN_MIN_SIDE_EXCEPTIONS
         lvl = load_level(ROOT / 'leveldata.js')
         self.assertIn('elements', lvl)
         p, rep = self.run_cli('--sides-only', '--level', str(ROOT / 'leveldata.js'), '--green-min-side', '540')
@@ -334,7 +336,7 @@ class CliTests(unittest.TestCase):
         s = rep['summary']
         short = [(e['id'], i) for e in lvl['elements'] if e['role'] == 'bounce'
                  for i, (a, b) in enumerate(zip(e['points'], e['points'][1:] + e['points'][:1]))
-                 if math.hypot(b['x'] - a['x'], b['y'] - a['y']) < 540 - COORD_TOL]
+                 if math.hypot(b['x'] - a['x'], b['y'] - a['y']) < min(540, GREEN_MIN_SIDE_EXCEPTIONS.get(e['id'], 540)) - COORD_TOL]
         self.assertEqual([(v['element'], v['edge']) for v in s['greenSideViolations']], sorted(short))
         self.assertEqual(p.returncode, 1 if short else 0)
 

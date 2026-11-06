@@ -31,11 +31,12 @@ EXTENDED_LAYOUT = 'extended-mountain-v15'
 # Since TASK-781 the shipped run adds a green wall on the outer side of every safe space S0..S8 / T0..T8 (--safe-walls,
 # SAFE_WALLS) as v22; `--no-safe-walls` is the previous shipped v21.
 SHIPPED_LAYOUT = 'extended-mountain-v22'
-# TASK-912/913 candidate: the shipped run plus --green-min-side (every green side >= UNITS + 5) as v23. Not shipped:
-# under the checker's hard rules one body (P89, Z3-B7) cannot reach 545 (TASK-913 residuals, user decision pending),
-# so the default run stays v22 (--no-green-min-side is the same as no flag).
+# Shipped since 2026-11-06: the shipped run (with --safe-walls) also grows every green side to >= GREEN_MIN_SIDE_DEFAULT + 5
+# (--green-min-side) as v23. Under the checker's hard rules one body (P89, Z3-B7) cannot reach it and keeps 339-366
+# (GREEN_MIN_SIDE_EXCEPTIONS; user decision: accept). --no-green-min-side gives the previous v22 byte for byte.
 GREEN_MIN_SIDE_LAYOUT = 'extended-mountain-v23'
 GREEN_MIN_SIDE_DEFAULT = 540.
+GREEN_MIN_SIDE_EXCEPTIONS = ('P89-body0',)
 SKY_SPIRE_V21_LAYOUT = 'extended-mountain-v21'
 GAUNTLET_V20_LAYOUT = 'extended-mountain-v20'
 EXT_SUMMIT_V19_LAYOUT = 'extended-mountain-v19'
@@ -3509,10 +3510,10 @@ def main():
                     help='candidate, last step: grow every green body until each side is >= UNITS + 5 (contact faces and '
                          'places kept; growth away from the contact face, within the yellow 1620 / grapple-shortcut / '
                          'x-range / no-grapple-rest rules; sides that cannot reach it are listed as residuals). Shipped '
-                         'run with it: layout id ' + GREEN_MIN_SIDE_LAYOUT + ' (proposed UNITS %g = 1 R). Off by default'
+                         'run: layout id ' + GREEN_MIN_SIDE_LAYOUT + ', UNITS %g = 1 R by default'
                          % GREEN_MIN_SIDE_DEFAULT)
     ap.add_argument('--no-green-min-side', dest='green_min_side', action='store_const', const=False,
-                    help='skip the green growth (the default): the shipped run gives v22 byte for byte')
+                    help='skip the green growth: the shipped run gives v22 byte for byte')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -3584,12 +3585,17 @@ def main():
         raise ValueError('--safe-walls needs the gauntlet and the Sky Spire (--ext-summit-gauntlet --sky-spire)')
     if not args.ext_summit and (args.ext_summit_fold or args.ext_summit_riser or args.ext_summit_gauntlet):
         raise ValueError('--ext-summit-fold / --ext-summit-riser / --ext-summit-gauntlet need --ext-summit')
-    if shipped and args.mirror_p1:
+    # The P1 mirror/shift (2026-11-05) belongs to the full shipped run; legacy layout flags keep their old P1
+    if shipped and args.mirror_p1 and m['layoutId'] == SHIPPED_LAYOUT:
         p1 = next(f for f in m['fragments'] if f['semanticId'] == 'P1')
         unmirrored_x = centroid_x(p1)
         mirror_opening_p1(m, opening)
         if args.p1_shift:
             shift_opening_p1(m, unmirrored_x)
+    # Default only on the full shipped run (v22 base); legacy layout flags (--no-purple-rest, --no-safe-walls, ...)
+    # reproduce their old layouts without it
+    if args.green_min_side is None and shipped and m['layoutId'] == SHIPPED_LAYOUT:
+        args.green_min_side = GREEN_MIN_SIDE_DEFAULT
     if args.green_min_side not in (None, False):
         grow_green_min_side(m, args.green_min_side)
         if shipped:

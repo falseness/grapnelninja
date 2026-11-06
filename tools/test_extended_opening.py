@@ -43,7 +43,10 @@ def sha(path):
 
 def generate(dest, opening):
     return subprocess.Popen([sys.executable, str(TOOLS / 'retune_extended_level.py'), '--source', str(SOURCE),
-                             '--output-dir', str(dest), '--guidelines', str(GUIDELINES), '--opening', opening],
+                             '--output-dir', str(dest), '--guidelines', str(GUIDELINES), '--opening', opening,
+                             # The opening contract is checked on the v22 base: v23's green growth (the shipped default
+                             # since 2026-11-06) is the last step and thickens P0..P2 on purpose
+                             '--no-green-min-side'],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
