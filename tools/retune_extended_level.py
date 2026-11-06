@@ -10,6 +10,7 @@ from fractions import Fraction
 from check_level_geometry import (COORD_TOL, MIN_INTERIOR_ANGLE, MIN_SIDE_LENGTH, interior_angles, point_segment,
                                   self_intersections, union_distance)
 import convert_extended_mountain_svg as svg
+from check_level_geometry import rest_faces, rest_pockets
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
@@ -30,8 +31,11 @@ EXTENDED_LAYOUT = 'extended-mountain-v15'
 # Since TASK-781 the shipped run adds a green wall on the outer side of every safe space S0..S8 / T0..T8 (--safe-walls,
 # SAFE_WALLS) as v22; `--no-safe-walls` is the previous shipped v21.
 SHIPPED_LAYOUT = 'extended-mountain-v22'
-# TASK-912 candidate: the shipped run plus --green-min-side (every green side >= UNITS + 5).
+# TASK-912/913 candidate: the shipped run plus --green-min-side (every green side >= UNITS + 5) as v23. Not shipped:
+# under the checker's hard rules one body (P89, Z3-B7) cannot reach 545 (TASK-913 residuals, user decision pending),
+# so the default run stays v22 (--no-green-min-side is the same as no flag).
 GREEN_MIN_SIDE_LAYOUT = 'extended-mountain-v23'
+GREEN_MIN_SIDE_DEFAULT = 540.
 SKY_SPIRE_V21_LAYOUT = 'extended-mountain-v21'
 GAUNTLET_V20_LAYOUT = 'extended-mountain-v20'
 EXT_SUMMIT_V19_LAYOUT = 'extended-mountain-v19'
@@ -2929,7 +2933,9 @@ def shift_opening_p1(m, unmirrored_x):
     distance / witness / pairChecks and recorded in m['p1Shift']."""
     f = next(f for f in m['fragments'] if f['semanticId'] == 'P1')
     dx = unmirrored_x - centroid_x(f)
-    f['x'] += dx
+    exact = len(f['polys']) == 1 and reproduce_p1_hotfix(f, dx)
+    if not exact:
+        f['x'] += dx
     fs = m['fragments']; i = fs.index(f); gaps = {}
     for row in m['encounters']:
         n = row['number']
@@ -2945,7 +2951,41 @@ def shift_opening_p1(m, unmirrored_x):
             other = next(x for x in fs if x['id'] == (c['target'] if c['source'] == f['id'] else c['source']))
             d = gap(f, other)[0]
             c.update(minimumGap=d, passOutsideRange=d-21.6 > 540)
-    m['p1Shift'] = dict(fragment=f['id'], dx=dx, x=f['x'], centroidX=unmirrored_x, gaps=gaps)
+    m['p1Shift'] = dict(fragment=f['id'], dx=dx, x=f['x'], centroidX=unmirrored_x, gaps=gaps, hotfixBytes=exact)
+
+
+# The shipped hotfix (7850f34) edited leveldata.js by hand: P1-body0's element x became this value and its relative
+# points were kept. It is 3 ulps from x + dx, so no plain float shift of the fragment reproduces it (TASK-912
+# p1_exact); reproduce_p1_hotfix writes the absolute polygon so the importer yields exactly these bytes (TASK-913).
+P1_HOTFIX_ELEMENT_X = 1820.4679886632446
+
+
+def reproduce_p1_hotfix(f, dx):
+    """Shift single-body P1 by dx so the SVG importer yields the shipped hotfix bytes: element x = the hotfix value
+    (when x + dx lands within 1e-9 of it, else x + dx itself) and relative points equal to the unshifted import's.
+    The fragment box x moves by dx; each polygon x is rebased (within a few ulps) so f['x'] + px is the wanted
+    absolute vertex. Returns False, changing nothing, when the floats cannot be matched exactly."""
+    poly = f['polys'][0]
+    absx = [f['x'] + px for px, _ in poly]             # what svg.num() writes and the importer reads back
+    rel = [a - absx[0] for a in absx]                  # the importer's relative points (unshifted)
+    ex = absx[0] + dx
+    if abs(ex - P1_HOTFIX_ELEMENT_X) < 1e-9:
+        ex = P1_HOTFIX_ELEMENT_X
+    want = [ex + r for r in rel]
+    if any(w - ex != r for w, r in zip(want, rel)):
+        return False
+    fx = f['x'] + dx; new = []
+    for w, (px, py) in zip(want, poly):
+        q = w - fx
+        for _ in range(16):
+            if fx + q == w:
+                break
+            q = math.nextafter(q, math.inf if fx + q < w else -math.inf)
+        if fx + q != w:
+            return False
+        new.append([q, py])
+    f['x'] = fx; f['polys'][0] = new
+    return True
 
 
 # TASK-912 (candidate, --green-min-side UNITS): every side of every green (role 'bounce') body >= UNITS + 5, without
@@ -2972,6 +3012,13 @@ GREEN_SOLVE_BUDGET = 60
 # Rigid-shift fallback: largest shift (units) and growth attempts per tried shift.
 GREEN_MAX_SHIFT = 600
 GREEN_SHIFT_BUDGET = 10
+# TASK-913: the growth also keeps the shipped checker's hard rules (check_level_geometry.py full check): every yellow
+# band stays >= YELLOW_CLEARANCE from every grown body (or no closer than before), every non-consecutive fragment pair
+# (and every transfer outside a purple zone) keeps clearance - player diameter > 1 R (or no smaller than before), and
+# no body leaves FOLD_X_RANGE (or its own original x extent). Sides that cannot reach the target under these rules
+# grow as far as allowed and are listed in m['greenMinSide']['residuals'].
+GREEN_SHORTCUT_CLEARANCE = 540. + 2 * svg.PLAYER_RADIUS
+GREEN_RULE_MARGIN = 1e-3
 
 
 def edge_frame(poly):
@@ -3090,7 +3137,18 @@ def grow_green_min_side(m, units):
     contact_shifts = {}
     changed, fallbacks, transfers_before = [], [], {r['id']: r['distance'] for r in m['encounters']}
     pairs_before = {(c['source'], c['target']): c['minimumGap'] for c in m['pairChecks']}
-    def grow_one(key, fair):
+    # Pairs exempt from the grapple-shortcut rule: the explicit opening pairs and transfers inside one purple zone.
+    exempt = {frozenset(p) for p in m.get('allowedGrapplePairs', [])} | {
+        frozenset((r['fromFragment'], r['toFragment'])) for r in m['encounters'] if r.get('noGrappleZone')}
+    rejected = dict(yellow=0, shortcut=0, xRange=0, rest=0, body=0, share=0, zone=0, spawn=0, finish=0, shape=0)
+    rest_zones = [(z.get('id', 'zone%d' % zi), [tuple(p) for p in z['polygon']])
+                  for zi, z in enumerate(m.get('noGrappleZones', []))]
+    def rest_count(ab):
+        # The checker's no-grapple rest rule on one body: in-zone upward faces < 15 deg plus pockets.
+        faces = rest_faces({'body': ({'role': 'bounce'}, [tuple(p) for p in ab])}, rest_zones)
+        return sum(not r['pass'] for r in faces) + len(rest_pockets(faces))
+    partial_reasons, full_failures = {}, {}
+    def grow_one(key, fair, partial=False):
         i, k = key; f = fs[i]; poly = [list(p) for p in f['polys'][k]]
         frame = edge_frame(poly)
         n = len(poly)
@@ -3099,42 +3157,67 @@ def grow_green_min_side(m, units):
         orig_abs = original[key]
         inside = [zi for zi, z in enumerate(zones) if zone_overlap(orig_abs, z) >= poly_area(orig_abs) - 1e-6]
         zone_before = [zone_overlap(orig_abs, z) for z in zones]
+        rest_before = rest_count(orig_abs)
         # Fixed neighbourhood: everything that could come near this body at any growth we allow.
-        reach = bbox_of(orig_abs, 4*target)
+        reach = bbox_of(orig_abs, 4*target + GREEN_SHORTCUT_CLEARANCE)
         others = [(('green',) + kk, p) for kk, p in current.items() if kk != key and boxes_meet(bbox_of(p), reach)]
+        reach = bbox_of(orig_abs, 4*target + YELLOW_CLEARANCE)
         others += [(('yellow', yi), p) for yi, p in enumerate(yellow) if boxes_meet(bbox_of(p), reach)]
-        need, fair_need = {}, {}
+        x0, x1 = min(p[0] for p in orig_abs), max(p[0] for p in orig_abs)
+        x_lo, x_hi = min(FOLD_X_RANGE[0], x0), max(FOLD_X_RANGE[1], x1)
+        need, fair_need, rule, hard = {}, {}, {}, {}
         for name, p in others:
             then = original[name[1:]] if name[0] == 'green' else p
             d0 = body_distance(orig_abs, then)
-            need[name] = min(GREEN_GROWTH_CLEARANCE, d0)
+            if name[0] == 'yellow':
+                rule[name], limit = 'yellow', YELLOW_CLEARANCE
+            elif name[1] != i and frozenset((f['id'], fs[name[1]]['id'])) not in exempt:
+                rule[name], limit = 'shortcut', GREEN_SHORTCUT_CLEARANCE
+            else:
+                rule[name], limit = 'body', GREEN_GROWTH_CLEARANCE
+            need[name] = min(GREEN_GROWTH_CLEARANCE if limit == GREEN_GROWTH_CLEARANCE else limit + GREEN_RULE_MARGIN, d0)
+            # The hard rules hold exactly (checker: drag >= 1620, shortcut margin > 540) wherever they held before.
+            hard[name] = limit if rule[name] != 'body' and d0 >= limit else None
             if fair and name[0] == 'green':
                 # Fair share: take at most half of the free gap to another green body (its original outline).
                 fair_need[name] = (d0 + need[name])/2
         def conflict(local, fr):
+            why = conflict_of(local, fr)
+            if why is not None:
+                rejected[why[1]] += 1
+                return why[0]
+            return None
+        def conflict_of(local, fr):
             ab = [[f['x']+x, f['y']+y] for x, y in local]
             if self_intersections(ab) or min(signed_lengths(local, fr)) <= 1.:
-                return 'shape'
-            bb = bbox_of(ab, GREEN_GROWTH_CLEARANCE)
+                return 'shape', 'shape'
+            xs = [p[0] for p in ab]
+            if min(xs) < x_lo - 1e-9 or max(xs) > x_hi + 1e-9:
+                return 'x range %.3f..%.3f' % (min(xs), max(xs)), 'xRange'
             for name, p in others:
-                if boxes_meet(bb, bbox_of(p)) and body_distance(ab, p) < need[name] - 1e-6:
-                    return 'body %s' % (name,)
+                if boxes_meet(bbox_of(ab, need[name]), bbox_of(p)):
+                    d = body_distance(ab, p)
+                    if d < need[name] - 1e-6 or (hard[name] is not None and (
+                            d < hard[name] if rule[name] == 'yellow' else d <= hard[name])):
+                        return '%s %s' % (rule[name], name), rule[name]
                 if name in fair_need:
                     then = original[name[1:]]
                     if boxes_meet(bbox_of(ab, fair_need[name]), bbox_of(then)) and \
                             body_distance(ab, then) < fair_need[name] - 1e-6:
-                        return 'share %s' % (name,)
+                        return 'share %s' % (name,), 'share'
             for zi, z in enumerate(zones):
                 if zi in inside:
                     if zone_overlap(ab, z) < poly_area(ab) - GREEN_ZONE_AREA_TOL:
-                        return 'leaves zone %d' % zi
+                        return 'leaves zone %d' % zi, 'zone'
                 elif zone_overlap(ab, z) > zone_before[zi] + GREEN_ZONE_AREA_TOL:
-                    return 'enters zone %d' % zi
+                    return 'enters zone %d' % zi, 'zone'
+            if rest_count(ab) > rest_before:
+                return 'rest (no-grapple zone face < 15 deg or pocket)', 'rest'
             if svg.point_in_polygon(spawn, [tuple(p) for p in ab]) or min(
                     point_segment(spawn, a, b)[0] for a, b in zip(ab, ab[1:]+ab[:1])) <= svg.PLAYER_RADIUS:
-                return 'spawn'
+                return 'spawn', 'spawn'
             if zone_overlap(ab, finish) > 1e-6:
-                return 'finish'
+                return 'finish', 'finish'
             return None
         def solve(base, anchor, collapsed=()):
             """Grow base (the body, possibly shifted or with folded corners) with the contact face anchor.
@@ -3147,7 +3230,7 @@ def grow_green_min_side(m, units):
             # of a body without the contact (wall, shield, shelf) only as the last one.
             cost = [(None if how == 'contact' else 3) if j == anchor else
                     (2 if fr[j][1][0]*na[0]+fr[j][1][1]*na[1] > GREEN_FRONT_DOT else 1) for j in range(n)]
-            o = [0.]*n; saturated = set(); reasons = []; used_front = 0
+            o = [0.]*n; saturated = set(); reasons = []; used_front = 0; stuck = set()
             if conflict(base, fr) is not None:
                 return 'start: %s' % conflict(base, fr)
             def lengths(off):
@@ -3157,7 +3240,7 @@ def grow_green_min_side(m, units):
                 return [b - a for a, b in zip(base_l, lengths(bump))]
             for _ in range(400):
                 L = lengths(o)
-                short = [e for e in range(n) if L[e] < target - 1e-7]
+                short = [e for e in range(n) if L[e] < target - 1e-7 and e not in stuck]
                 if not short:
                     break
                 e = min(short, key=lambda e: L[e])
@@ -3171,6 +3254,9 @@ def grow_green_min_side(m, units):
                     if d > 1e-9 and o[j] < GREEN_MAX_OFFSET and not any(
                             col[x] < -1e-9 and L[x] < target - 1e-7 for x in range(n) if x != e):
                         cands.append((cost[j], j, d))
+                if not cands and partial:
+                    # Residual pass: no fallbacks, the side keeps the length the rules allow.
+                    stuck.add(e); continue
                 if not cands:
                     # Extend fallback (resize_opening_sides' 'extend'): slide the stuck edge's free end along the edge's
                     # own line until the edge is long enough; only the neighbouring non-contact edge turns. Where that
@@ -3251,8 +3337,8 @@ def grow_green_min_side(m, units):
             return new, o, reasons, used_front, list(collapsed)
         budget = [GREEN_SOLVE_BUDGET]
         result = solve(poly, anchor0); shift = None
-        movable = how == 'facing' or len(f['polys']) == 1
-        if isinstance(result, str) and movable:
+        movable = how == 'facing' or len(f['polys']) == 1 and not partial
+        if isinstance(result, str) and movable and not partial:
             # Last fallback: the smallest rigid shift that lets the body grow (16 directions, 10-unit rings). A body
             # without the contact (shield, wall, shelf) moves alone; a single-body panel moves its whole fragment,
             # so its contact point moves with it (recorded in contactShifts).
@@ -3269,8 +3355,13 @@ def grow_green_min_side(m, units):
             else:
                 result = first
         if isinstance(result, str):
-            return '%s %s' % (eid, result)
-        new, o, reasons, used_front, folds = result
+            if not partial:
+                return '%s %s' % (eid, result)
+            new, o, reasons, used_front, folds = [list(p) for p in poly], [0.]*n, [dict(conflict=result)], 0, []
+        else:
+            new, o, reasons, used_front, folds = result
+        if partial:
+            partial_reasons[key] = reasons
         if shift and how == 'contact':
             f['x'] += shift[0]; f['y'] += shift[1]
             new = [[x-shift[0], y-shift[1]] for x, y in new]
@@ -3285,9 +3376,10 @@ def grow_green_min_side(m, units):
             rec['shift'] = shift
         if folds:
             rec['folded'] = folds
-        if reasons or used_front or shift or folds or not fair:
+        if reasons or used_front or shift or folds or not fair or partial:
             fallbacks.append(dict(element=eid, frontEdgeMoved=used_front >= 1, facingFaceMoved=used_front >= 2,
-                                  shift=shift, folded=folds, fairShareDropped=not fair, cutBacks=reasons))
+                                  shift=shift, folded=folds, fairShareDropped=not fair, residualPass=partial,
+                                  cutBacks=reasons))
         return None
     def short(key):
         poly = fs[key[0]]['polys'][key[1]]
@@ -3295,30 +3387,69 @@ def grow_green_min_side(m, units):
     # Pass 1: every short body within its fair share of each gap; pass 2: the bodies that failed, against the bodies as
     # grown (fallback, recorded).
     retry = [key for key in sorted(current) if short(key) and grow_one(key, True) is not None]
-    failed = [why for why in (grow_one(key, False) for key in retry) if why is not None]
-    if failed:
-        raise ValueError('green min side: %d bodies cannot grow:\n%s' % (len(failed), '\n'.join(failed)))
+    for key in retry:
+        why = grow_one(key, False)
+        if why is not None:
+            full_failures[key] = why
+    # Pass 3 (TASK-913): bodies that cannot reach the target under the rules grow as far as allowed (residuals).
+    for key in sorted(full_failures):
+        grow_one(key, False, partial=True)
+    residuals = []
+    for key in sorted(current):
+        i, k = key; poly = fs[i]['polys'][k]; lens = signed_lengths(poly, edge_frame(poly))
+        for e, length in enumerate(lens):
+            # Same tolerance as the solver's convergence test (a side 545 - 7e-8 has converged).
+            if length < target - 1e-7:
+                n = len(poly)
+                near = [r.get('conflict') for r in partial_reasons.get(key, [])
+                        if r.get('edge') in (None, (e-1) % n, e, (e+1) % n)]
+                rules = sorted({str(c).split(' ')[0] for c in near if c})
+                residuals.append(dict(element=svg.body_id(fs[i], k), fragment=fs[i]['id'],
+                                      semanticId=fs[i]['semanticId'], edge=e, length=length,
+                                      blockingRule='+'.join(rules) or 'none recorded',
+                                      blockingConflicts=sorted({str(c) for c in near if c}),
+                                      fullSolveFailure=full_failures.get(key)))
     changed.sort(key=lambda c: (fs.index(next(f for f in fs if f['id'] == c['fragment'])), c['body']))
     for f in fs:
         moved_by = contact_shifts.get(f['id'], [0, 0])
         if f['id'] not in contact_shifts and svg.contact(f) != contacts[f['id']] or \
                 math.dist(svg.contact(f), (contacts[f['id']][0]+moved_by[0], contacts[f['id']][1]+moved_by[1])) > 1e-6:
             raise ValueError('green min side moved the contact of %s' % f['id'])
-    transfers = []
+    transfers, relabelled = [], []
     for row in m['encounters']:
         a, b = fs[row['number']-1:row['number']+1]
         d, w, _, _ = gap(a, b)
         row.update(distance=d, witness=w)
         if a['id'] in contact_shifts or b['id'] in contact_shifts:
             row['flight'] = [svg.contact(a), svg.contact(b)]
+        # TASK-913: the transfer label (svg gap-percent, level gapPercent, reference percent) is the measured gap.
+        if row.get('percent') is None or abs(row['percent'] - d/5.4) > 0.005:
+            relabelled.append(dict(id=row['id'], percent=[row.get('percent'), round(d/5.4, 2)]))
+            row['percent'] = round(d/5.4, 2)
         transfers.append(dict(id=row['id'], before=transfers_before[row['id']], after=d))
     for c in m['pairChecks']:
         a = next(x for x in fs if x['id'] == c['source']); b = next(x for x in fs if x['id'] == c['target'])
         d = gap(a, b)[0]
         c.update(minimumGap=d, passOutsideRange=d-21.6 > 540)
+    # TASK-913: every yellow band's nearest-solid reference is re-measured (and its section catcher record).
+    records = [c for key, sub, _ in SAFE_WALLS['sections'] for c in ((m.get(key, {}).get(sub, {}) if sub else
+                                                                      m.get(key, {})).get('catchers', []))]
+    bands = []
+    for b in m['yellowBands']:
+        d, sid = min((union_distance(svg.bodies(f), [b['polygon']])[0], f['id']) for f in fs)
+        if abs(d - b['nearestSolidClearance']) > 1e-9:
+            bands.append(dict(id=b['id'], before=b['nearestSolidClearance'], after=d))
+        b.update(nearestSolidClearance=d, nearestSolid=sid)
+        for c in records:
+            if c['id'] == b['id']:
+                c.update(nearestSolidClearance=d, nearestSolid=sid)
     m['greenMinSide'] = dict(units=units, target=target, clearance=GREEN_GROWTH_CLEARANCE, changed=changed,
                              contactShifts=contact_shifts,
-                             fallbacks=fallbacks, transfers=transfers,
+                             fallbacks=fallbacks, transfers=transfers, relabelled=relabelled, yellowBands=bands,
+                             rules=dict(yellowClearance=YELLOW_CLEARANCE, shortcutClearance=GREEN_SHORTCUT_CLEARANCE,
+                                        xRange=list(FOLD_X_RANGE), noGrappleRest='checker rest_faces/rest_pockets'),
+                             rejectedChecks=rejected, residuals=residuals,
+                             fullSolveFailures={svg.body_id(fs[i], k): why for (i, k), why in full_failures.items()},
                              purpose='TASK-912: every green side >= units + 5; contact faces and places kept')
     return m
 
@@ -3375,9 +3506,13 @@ def main():
                     help='(shipped run, with --mirror-p1) shift the mirrored P1 right so its polygon centroid x is the '
                          'unmirrored one (+95.67, the shipped hotfix). --no-p1-shift gives the unshifted mirror')
     ap.add_argument('--green-min-side', type=float, default=None, metavar='UNITS',
-                    help='candidate (TASK-912): last step, grow every green body until each side is >= UNITS + 5 '
-                         '(contact faces and places kept; growth away from the contact face); layout id '
-                         + GREEN_MIN_SIDE_LAYOUT + ' on the shipped run')
+                    help='candidate, last step: grow every green body until each side is >= UNITS + 5 (contact faces and '
+                         'places kept; growth away from the contact face, within the yellow 1620 / grapple-shortcut / '
+                         'x-range / no-grapple-rest rules; sides that cannot reach it are listed as residuals). Shipped '
+                         'run with it: layout id ' + GREEN_MIN_SIDE_LAYOUT + ' (proposed UNITS %g = 1 R). Off by default'
+                         % GREEN_MIN_SIDE_DEFAULT)
+    ap.add_argument('--no-green-min-side', dest='green_min_side', action='store_const', const=False,
+                    help='skip the green growth (the default): the shipped run gives v22 byte for byte')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -3455,7 +3590,7 @@ def main():
         mirror_opening_p1(m, opening)
         if args.p1_shift:
             shift_opening_p1(m, unmirrored_x)
-    if args.green_min_side is not None:
+    if args.green_min_side not in (None, False):
         grow_green_min_side(m, args.green_min_side)
         if shipped:
             m['layoutId'] = GREEN_MIN_SIDE_LAYOUT
