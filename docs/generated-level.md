@@ -1,10 +1,10 @@
 # Generated level
 
 **Hand edits on top of v23 (2026-11-06, user requests).**
-- `P0-roof`: a green block above the spawn: horizontal underside at y -805 (x -1100..1400, 2,500 wide),
-  irregular top up to y -1750 (7 sides, all >= 540). It is 775 above the spawn, so presses from 75 to 105
+- `P0-roof`: a green block above the spawn: horizontal underside at y -643 (x -1100..1400, 2,500 wide),
+  irregular top up to y -1588 (7 sides, all >= 540). It is 613 above the spawn, so presses from 45 to 135
   degrees catch it (at every moment of the spawn bounce; wider angles are out of the 540 grapple range). The
-  idle bounce is unchanged. Accepted: 790 from P1, 472 below the yellow G1-drag (< 1,620).
+  idle bounce is unchanged. Accepted: 628 from P1, 634 below the yellow G1-drag (< 1,620).
 - P1 and P2 (second and third islands) moved 540 (1 grapple length) down. P0->P1 is now 285 apart (an
   `allowedGrapplePairs` opening pair in the reference measurements), P1->P2 is unchanged (570), P2->P3 grew from
   1,272 to 1,566. The ROUTE_PROBE grid still finds each step (new/old hits of 120: 92/77, 90/84, 64/62).
