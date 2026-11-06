@@ -7,7 +7,7 @@ serves it over http with every external request aborted and replaces the
 vendored SDK (analytics/vendor/GameAnalytics.min.js) with a recording mock
 `gameanalytics` (the real EGA* enum values, GameAnalytics.* methods that
 record their arguments):
-- boot: configureBuild('itch-' + the release build id, BUILD_CONFIG.platform/build) then initialize(game key, secret key) once
+- boot: configureBuild('test-itch-' + the release build id (test- because navigator.webdriver), BUILD_CONFIG.platform/build) then initialize(game key, secret key) once
   with the injected keys, then startSession; the game runs.
 - every ANALYTICS facade call maps to its GameAnalytics call with the
   sanitized arguments and the EGA* enum values; unknown ad actions/types
@@ -339,7 +339,8 @@ class GameAnalyticsBackendTest(unittest.TestCase):
         self.assertEqual(names[:3], ['configureBuild', 'initialize', 'startSession'])
         self.assertEqual(names.count('initialize'), 1)
         self.assertEqual(names.count('configureBuild'), 1)
-        self.assertEqual(calls[0][1], ['itch-' + self.tree.build_id()])
+        # Playwright sets navigator.webdriver, so the harness's build is marked 'test-'
+        self.assertEqual(calls[0][1], ['test-itch-' + self.tree.build_id()])
         self.assertTrue(calls[1][1] == [self.env['GA_GAME_KEY'], self.env['GA_SECRET_KEY']],
                         'initialize was not called with GA_GAME_KEY / GA_SECRET_KEY')
         # the spawn section's progression Start follows the session

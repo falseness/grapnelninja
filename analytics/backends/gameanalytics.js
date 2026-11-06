@@ -335,7 +335,10 @@ var ANALYTICS_BACKEND = (function()
             const cfg = typeof BUILD_CONFIG === 'object' && BUILD_CONFIG || {}
             const release = String(cfg.build || config && config.build || '')
             // '<portal>-<build id>' so the itch.io and Y8 builds stay apart in GameAnalytics
-            const build = (release && cfg.platform ? cfg.platform + '-' + release : release).slice(0, 32)
+            // Automated browsers (navigator.webdriver: the smoke tests and test harnesses) and ?gaTest=1
+            // send 'test-<portal>-<build id>', so their sessions can be filtered out by build in GameAnalytics
+            const testRun = navigator.webdriver === true || /[?&]gaTest=1(&|$)/.test(location.search)
+            const build = ((testRun ? 'test-' : '') + (release && cfg.platform ? cfg.platform + '-' + release : release)).slice(0, 32)
             ready = true
             if (build)
                 deliver('configureBuild', [build])
