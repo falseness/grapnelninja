@@ -273,6 +273,18 @@ class BuildReleaseTest(unittest.TestCase):
                 self.assertEqual(strip(cfg), strip(repo).rstrip('\n'))
                 self.assertNotIn('buildconfig.js', self.zips[portal])
 
+    def test_03b_analytics_source(self):
+        # --analytics-source newgrounds: the itch build with analyticsSource set, nothing else changed
+        repo = self.tree.read('buildconfig.js').decode('utf-8')
+        plain = build_config(build_release.portal_buildconfig(repo, 'itch', 'abc', ('', '')))
+        ng = build_config(build_release.portal_buildconfig(repo, 'itch', 'abc', ('', ''), 'newgrounds'))
+        self.assertNotIn('analyticsSource', plain)
+        self.assertEqual(ng.pop('analyticsSource'), 'newgrounds')
+        self.assertEqual(ng, plain)
+        for portal, source in (('gamepix', 'newgrounds'), ('itch', 'y8'), ('itch', 'News Grounds')):
+            with self.subTest(portal=portal, source=source), self.assertRaises(ValueError):
+                build_release.build(portal, tempfile.mkdtemp(), env=self.env, tree=self.tree, analytics_source=source)
+
     def test_04_y8_ids_only_in_y8_zip(self):
         secrets = [self.env['Y8_APP_ID'].encode(), self.env['Y8_GAME_ID'].encode()]
         for portal in PORTALS:

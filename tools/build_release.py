@@ -313,14 +313,16 @@ def js_string(value):
     return "'" + str(value).replace('\\', '\\\\').replace("'", "\\'") + "'"
 
 
-def portal_buildconfig(source, portal, build_id, y8_ids):
-    """buildconfig.js with this build's BUILD_CONFIG line."""
+def portal_buildconfig(source, portal, build_id, y8_ids, analytics_source=None):
+    """buildconfig.js with this build's BUILD_CONFIG line (analytics_source: the GameAnalytics build prefix
+    when it is not the portal, e.g. the itch build uploaded to newgrounds.com)."""
     if len(CONFIG_LINE.findall(source)) != 1:
         raise ValueError('buildconfig.js must have exactly one "const BUILD_CONFIG = " line')
     modes = ', '.join(js_string(m) for m in MODES[portal])
     line = (f'const BUILD_CONFIG = {{platform: {js_string(portal)}, modes: [{modes}], '
             f'y8: {{appId: {js_string(y8_ids[0])}, gameId: {js_string(y8_ids[1])}}}, '
-            f'build: {js_string(build_id)}}}')
+            f'build: {js_string(build_id)}'
+            + (f', analyticsSource: {js_string(analytics_source)}' if analytics_source else '') + '}')
     return CONFIG_LINE.sub(lambda _m: line, source)
 
 
@@ -430,7 +432,7 @@ def other_mode_stubs(sources):
     return ('\n'.join(lines) + '\n').encode('utf-8')
 
 
-def runtime_files(tree, portal, y8_ids, ga_keys=('', ''), bundle=True):
+def runtime_files(tree, portal, y8_ids, ga_keys=('', ''), bundle=True, analytics_source=None):
     """{path: bytes} of the portal build (bundle=False: the per-script files before bundle_scripts)."""
     html = portal_html(tree.read('index.html').decode('utf-8'), portal)
     baked = bakes_route_arrows(tree)
@@ -452,7 +454,7 @@ def runtime_files(tree, portal, y8_ids, ga_keys=('', ''), bundle=True):
     for path in script_assets(tree, scripts):
         files[path] = tree.read(path)
     files['buildconfig.js'] = portal_buildconfig(
-        files['buildconfig.js'].decode('utf-8'), portal, tree.build_id(), y8_ids).encode('utf-8')
+        files['buildconfig.js'].decode('utf-8'), portal, tree.build_id(), y8_ids, analytics_source).encode('utf-8')
     if GA_BACKEND in files:
         files[GA_BACKEND] = ga_backend(files[GA_BACKEND].decode('utf-8'), ga_keys).encode('utf-8')
         files[GA_LICENSE] = tree.read(GA_LICENSE)
@@ -681,17 +683,26 @@ def ga_keys_for(portal, env):
     return tuple(keys)
 
 
-def build(portal, out=DEFAULT_OUT, rev='HEAD', env=None, tree=None):
-    """Write out/<portal>/grapple-over-<portal>.zip + manifest.json; return the manifest."""
+def build(portal, out=DEFAULT_OUT, rev='HEAD', env=None, tree=None, analytics_source=None):
+    """Write out/<portal>/grapple-over-<portal>.zip + manifest.json; return the manifest.
+    analytics_source (GA portals only): the same portal build, but GameAnalytics sees the build as
+    '<analytics_source>-<build id>'; written to out/<analytics_source>/grapple-over-<analytics_source>.zip."""
     if portal not in PORTALS:
         raise ValueError(f'unknown portal {portal!r}')
+    if analytics_source is not None:
+        if portal not in GA_PORTALS:
+            raise ValueError(f'--analytics-source needs a GameAnalytics portal {GA_PORTALS}, not {portal!r}')
+        if not re.fullmatch(r'[a-z0-9][a-z0-9.-]{0,30}', analytics_source) or analytics_source in PORTALS:
+            raise ValueError(f'bad analytics source {analytics_source!r}')
     env = os.environ if env is None else env
     tree = tree or CommittedTree(rev)
-    files = runtime_files(tree, portal, y8_ids_for(portal, env), ga_keys_for(portal, env))
+    files = runtime_files(tree, portal, y8_ids_for(portal, env), ga_keys_for(portal, env),
+                          analytics_source=analytics_source)
     data = archive(files)
-    folder = Path(out) / portal
+    name = analytics_source or portal
+    folder = Path(out) / name
     folder.mkdir(parents=True, exist_ok=True)
-    zip_path = folder / f'grapple-over-{portal}.zip'
+    zip_path = folder / f'grapple-over-{name}.zip'
     zip_path.write_bytes(data)
     manifest = {
         'portal': portal,
@@ -703,6 +714,7 @@ def build(portal, out=DEFAULT_OUT, rev='HEAD', env=None, tree=None):
         'sdk_tag': SDK_TAGS[portal],
         'analytics_backend': ANALYTICS_BACKENDS[portal],
         'analytics_keys_injected': ANALYTICS_BACKENDS[portal] == GA_BACKEND,
+        'analytics_source': analytics_source or portal,
         'baked': ({BAKED_ROUTE_ARROWS: {'arrows': len(baked_caches(tree)['route_arrows']['arrows']),
                                         'layoutId': baked_caches(tree)['route_arrows']['layoutId']}}
                   if bakes_route_arrows(tree) else {}),
@@ -725,11 +737,16 @@ def main(argv=None):
     parser.add_argument('--out', type=Path, default=DEFAULT_OUT,
                         help='output root; the build goes to OUT/<portal>/ (default %(default)s)')
     parser.add_argument('--rev', default='HEAD', help='committed revision to build (default HEAD)')
+    parser.add_argument('--analytics-source', metavar='NAME',
+                        help='itch/y8 only: same build, GameAnalytics build named NAME-<build id> '
+                             '(e.g. newgrounds for the itch build uploaded to newgrounds.com); goes to OUT/NAME/')
     args = parser.parse_args(argv)
+    if args.analytics_source and args.portal == 'all':
+        parser.error('--analytics-source needs one --portal')
     tree = CommittedTree(args.rev)
     for portal in PORTALS if args.portal == 'all' else (args.portal,):
-        m = build(portal, args.out, tree=tree)
-        print(f'PASS {portal}: {Path(args.out) / portal / m["zip"]} build={m["build_id"]} '
+        m = build(portal, args.out, tree=tree, analytics_source=args.analytics_source)
+        print(f'PASS {portal}: {Path(args.out) / (args.analytics_source or portal) / m["zip"]} build={m["build_id"]} '
               f'files={m["file_count"]} bytes={m["zip_size"]} sha256={m["zip_sha256"]} '
               f'modes={m["modes"]}')
     return 0
