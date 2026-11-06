@@ -473,15 +473,79 @@ def rp(p):
 
 # --- checks ---------------------------------------------------------------
 
+# Elements added by hand after the generator run (no reference fragment). check() compares the rest of the level
+# with the reference as before and holds these to check_hand_edits' own rules instead.
+HAND_EDITS = {
+    # Shipped v23 (2026-11-06, user request): a green block above the spawn so a first press anywhere from 30 to
+    # 165 degrees catches something. Accepted on purpose: it is 318 from P1 (the 540 + diameter pair rule would
+    # want 562: the first transfer gets easier) and 1280 below the yellow G1-drag (the 1620 rule).
+    'P0-roof': 'entrance roof above the spawn',
+}
+
+
+def split_hand_edits(level, hand_edits=None):
+    """(level without the HAND_EDITS elements, those elements); fragment element lists drop them too."""
+    hand_edits = HAND_EDITS if hand_edits is None else hand_edits
+    edits = [e for e in level['elements'] if e['id'] in hand_edits]
+    if not edits:
+        return level, []
+    fmt = dict(level['svgFormat'])
+    fmt['fragments'] = [dict(f, elements=[eid for eid in f['elements'] if eid not in hand_edits])
+                        for f in fmt['fragments']]
+    return dict(level, elements=[e for e in level['elements'] if e['id'] not in hand_edits], svgFormat=fmt), edits
+
+
+def check_hand_edits(level, edits):
+    """Own rules for hand-edit elements: green and grapplable, every side >= 540, a clean corner set, clear of every
+    other solid and zone by more than the player diameter, spawn and finish outside with the player radius."""
+    polys = level_polygons(level)
+    rows, problems_all = [], []
+    spawn = (level['spawn']['x'], level['spawn']['y'])
+    fin = level['finish']
+    finish = [(fin['left'], fin['top']), (fin['right'], fin['top']), (fin['right'], fin['bottom']), (fin['left'], fin['bottom'])]
+    for e in edits:
+        poly = polys[e['id']][1]
+        problems = []
+        if e['role'] != 'bounce' or e['grapplable'] is not True:
+            problems.append('not a grapplable bounce element')
+        short = [r(v) for v in side_lengths(poly) if v < GRAPPLE_RANGE - COORD_TOL]
+        if short:
+            problems.append('sides %s < %g' % (short, GRAPPLE_RANGE))
+        if self_intersections(poly):
+            problems.append('self-intersecting')
+        others = [(polygon_distance(poly, op)[0], oid, o['role']) for oid, (o, op) in polys.items() if oid != e['id']]
+        nearest_solid = min((x for x in others if x[2] not in ('drag', 'no-grapple')), default=(math.inf, None, None))
+        nearest_drag = min((x for x in others if x[2] == 'drag'), default=(math.inf, None, None))
+        nearest_zone = min((x for x in others if x[2] == 'no-grapple'), default=(math.inf, None, None))
+        for d, oid, role in (nearest_solid, nearest_drag, nearest_zone):
+            if d <= PLAYER_DIAMETER:
+                problems.append('%.6f from %s (%s) <= player diameter' % (d, oid, role))
+        spawn_clear = math.inf if inside(spawn, poly) else min(point_segment(spawn, a, b)[0] for a, b in edges(poly))
+        if inside(spawn, poly) or spawn_clear <= PLAYER_DIAMETER / 2:
+            problems.append('spawn clearance %.6f' % (-1 if inside(spawn, poly) else spawn_clear))
+        if polygon_distance(poly, finish)[0] <= 0:
+            problems.append('touches the finish')
+        rows.append({'id': e['id'], 'why': HAND_EDITS.get(e['id']), 'sides': [r(v) for v in side_lengths(poly)],
+                     'nearestSolid': [r(nearest_solid[0]), nearest_solid[1]], 'nearestDrag': [r(nearest_drag[0]), nearest_drag[1]],
+                     'nearestNoGrapple': [r(nearest_zone[0]), nearest_zone[1]], 'spawnClearance': r(spawn_clear),
+                     'pass': not problems})
+        problems_all += ['hand edit %s: %s' % (e['id'], p) for p in problems]
+    return rows, problems_all
+
+
 def check(level, svg_data, reference, min_side=None, no_grapple_rest=False):
     """min_side None inventories sides without failing (shipped layouts); a number enforces it.
 
     no_grapple_rest adds the opt-in no-rest-inside-purple rule (report key noGrappleRest); off, the report is unchanged.
+    HAND_EDITS elements are left out of the reference comparison and checked by check_hand_edits (report 'handEdits').
     """
     failures = []
     fail = failures.append
+    full_level = level
+    level, edits = split_hand_edits(level)
     polys = level_polygons(level)
     svg_shapes, svg_percents = svg_geometry(svg_data)
+    svg_shapes = {k: v for k, v in svg_shapes.items() if k not in HAND_EDITS}
     fmt = level['svgFormat']
     if fmt.get('grappleRange') != GRAPPLE_RANGE:
         fail('grappleRange %r != 540' % fmt.get('grappleRange'))
@@ -500,9 +564,12 @@ def check(level, svg_data, reference, min_side=None, no_grapple_rest=False):
             fail('%s: level vs SVG coordinate error %.6g > %.2g' % (eid, err, COORD_TOL))
 
     # Corners: every final polygon, computed from level coordinates alone.
-    angle_rows = corner_rows(polys, fail)
+    # Corners and sides cover hand edits too
+    full_polys = level_polygons(full_level)
+    angle_rows = corner_rows(full_polys, fail)
     names = {f['id']: f.get('semanticId') or f.get('name') for f in reference.get('fragments', [])}
-    sides = side_rows(polys, fragments, names, MIN_SIDE_LENGTH if min_side is None else min_side)
+    sides = side_rows(full_polys, {f['id']: f['elements'] for f in full_level['svgFormat']['fragments']}, names,
+                      MIN_SIDE_LENGTH if min_side is None else min_side)
     if min_side is not None:
         fail_sides(sides, min_side, fail)
 
@@ -666,6 +733,12 @@ def check(level, svg_data, reference, min_side=None, no_grapple_rest=False):
                           'internalPairs': sorted([p['a'], p['b']] for p in pairs if p['noGrappleZone'] == zid),
                           'pass': not problems})
 
+    hand_rows = []
+    if edits:
+        hand_rows, hand_problems = check_hand_edits(full_level, edits)
+        for p in hand_problems:
+            fail(p)
+
     summary = {
         'pass': not failures, 'failures': len(failures),
         'transfers': len(transfers), 'transfersPass': sum(t['pass'] for t in transfers),
@@ -705,6 +778,9 @@ def check(level, svg_data, reference, min_side=None, no_grapple_rest=False):
             'noGrappleZones': zone_rows, 'noGrappleInternalGap': NO_GRAPPLE_INTERNAL_GAP, 'sides': sides}
     if rest is not None:
         report['noGrappleRest'] = rest
+    if edits:
+        report['handEdits'] = hand_rows
+        summary['handEdits'] = len(hand_rows)
     return report
 
 

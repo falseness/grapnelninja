@@ -394,5 +394,41 @@ class MaxXRangeTests(unittest.TestCase):
             self.assertEqual(p.returncode, 2, value)
 
 
+class HandEditTests(unittest.TestCase):
+    """check_level_geometry.HAND_EDITS: left out of the reference comparison, held to their own rules."""
+
+    @classmethod
+    def setUpClass(cls):
+        import check_level_geometry as g
+        cls.g = g
+        text = (ROOT / 'leveldata.js').read_text()
+        cls.level = json.loads(text[text.find('{'):text.rstrip().rstrip(';').rfind('}') + 1])
+
+    def roof(self, level):
+        return next(e for e in level['elements'] if e['id'] == 'P0-roof')
+
+    def test_shipped_roof_passes_own_rules(self):
+        level, edits = self.g.split_hand_edits(self.level)
+        self.assertEqual([e['id'] for e in edits], ['P0-roof'])
+        self.assertNotIn('P0-roof', [e['id'] for e in level['elements']])
+        self.assertNotIn('P0-roof', [x for f in level['svgFormat']['fragments'] for x in f['elements']])
+        rows, problems = self.g.check_hand_edits(self.level, edits)
+        self.assertEqual(problems, [])
+        self.assertEqual(rows[0]['sides'], [960.0, 540.0, 960.0, 540.0])
+        self.assertGreater(rows[0]['spawnClearance'], self.g.PLAYER_DIAMETER / 2)
+
+    def test_bad_roofs_fail(self):
+        for name, change in (('short side', lambda e: e['points'][1].update(x=500) or e['points'][2].update(x=500)),
+                             ('touches P0', lambda e: e.update(y=-530)),
+                             ('covers the spawn', lambda e: e.update(y=-300)),
+                             ('not grapplable', lambda e: e.update(grapplable=False))):
+            with self.subTest(name):
+                level = copy.deepcopy(self.level)
+                change(self.roof(level))
+                _, edits = self.g.split_hand_edits(level)
+                _, problems = self.g.check_hand_edits(level, edits)
+                self.assertTrue(problems, name)
+
+
 if __name__ == '__main__':
     unittest.main()

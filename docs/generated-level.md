@@ -1,5 +1,19 @@
 # Generated level
 
+**Hand edit on top of v23 (2026-11-06): `P0-roof`.** A green block, x -200..760,
+y -940..-400 (960 x 540), above the spawn, in fragment P0, so a first press anywhere
+between 30 and 165 degrees from the spawn catches something (v23 had nothing in
+grapple range from the spawn). It sits ~90 units above the spawn bounce apex, so
+the idle bounce is unchanged. It was added to `leveldata.js` and the reference copy
+`artifacts/levels/extended-mountain.svg` by hand, then the reference level.js/json
+were re-imported from that SVG; the generator does **not** produce it, so a
+regeneration drops it (re-add it to the SVG). `tools/check_level_geometry.py`
+lists it in `HAND_EDITS`: the reference comparison skips it and
+`check_hand_edits` holds it to its own rules (grapplable green, sides >= 540, no
+contact with other solids or zones, spawn clear). Accepted: 318 from P1 (the
+first transfer gets easier) and 1,280 below the yellow G1-drag (< 1,620). The
+layout id stays `extended-mountain-v23` (saves keep working).
+
 Layout `extended-mountain-v23` (shipped 2026-11-06) is the default generator
 output: v22 (below) plus `--green-min-side 540`, the last step, which grows
 every green (role `bounce`) body until each side is >= 545 (1 grapple length

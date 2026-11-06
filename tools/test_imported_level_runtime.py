@@ -1304,7 +1304,9 @@ class Task651Tests(unittest.TestCase):
                     worst = max(worst, abs(x - m['x'] - px), abs(y - m['y'] - py))
                 kinds[m['kind']] = kinds.get(m['kind'], 0) + 1
         self.assertLessEqual(worst, TOLERANCE)
-        self.assertEqual(len(rt['elements']), sum(kinds.values()))
+        # Hand edits (check_level_geometry.HAND_EDITS, e.g. P0-roof) have no concept fragment
+        from check_level_geometry import HAND_EDITS
+        self.assertEqual(len([e for e in rt['elements'] if e['id'] not in HAND_EDITS]), sum(kinds.values()))
         report['checks']['conceptFragments'] = {'fragments': len(self.measurements['fragments']), 'bodies': sum(kinds.values()),
                                                 'bodiesByKind': kinds, 'maxError': worst}
         # Transfer endpoints: on the live fragment boundaries, at the measured distance.
