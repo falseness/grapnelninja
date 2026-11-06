@@ -404,6 +404,9 @@ class HandEditTests(unittest.TestCase):
         text = (ROOT / 'leveldata.js').read_text()
         cls.level = json.loads(text[text.find('{'):text.rstrip().rstrip(';').rfind('}') + 1])
 
+    def underside(self, e):
+        return max(e['y'] + p['y'] for p in e['points'])
+
     def roof(self, level):
         return next(e for e in level['elements'] if e['id'] == 'P0-roof')
 
@@ -414,13 +417,14 @@ class HandEditTests(unittest.TestCase):
         self.assertNotIn('P0-roof', [x for f in level['svgFormat']['fragments'] for x in f['elements']])
         rows, problems = self.g.check_hand_edits(self.level, edits)
         self.assertEqual(problems, [])
-        self.assertEqual(rows[0]['sides'], [960.0, 540.0, 960.0, 540.0])
+        self.assertGreaterEqual(min(rows[0]['sides']), 540.0)
         self.assertGreater(rows[0]['spawnClearance'], self.g.PLAYER_DIAMETER / 2)
 
     def test_bad_roofs_fail(self):
         for name, change in (('short side', lambda e: e['points'][1].update(x=500) or e['points'][2].update(x=500)),
-                             ('touches P0', lambda e: e.update(y=-530)),
-                             ('covers the spawn', lambda e: e.update(y=-300)),
+                             # Moved so its horizontal underside sits at y +5 (into P0, top 0) or -20 (spawn at -30)
+                             ('touches P0', lambda e: e.update(y=e['y'] + 5 - self.underside(e))),
+                             ('covers the spawn', lambda e: e.update(y=e['y'] - 20 - self.underside(e))),
                              ('not grapplable', lambda e: e.update(grapplable=False))):
             with self.subTest(name):
                 level = copy.deepcopy(self.level)

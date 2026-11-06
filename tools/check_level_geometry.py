@@ -476,9 +476,9 @@ def rp(p):
 # Elements added by hand after the generator run (no reference fragment). check() compares the rest of the level
 # with the reference as before and holds these to check_hand_edits' own rules instead.
 HAND_EDITS = {
-    # Shipped v23 (2026-11-06, user request): a green block above the spawn so a first press anywhere from 30 to
-    # 165 degrees catches something. Accepted on purpose: it is 318 from P1 (the 540 + diameter pair rule would
-    # want 562: the first transfer gets easier) and 1280 below the yellow G1-drag (the 1620 rule).
+    # Shipped v23 (2026-11-06, user requests): a green block above the spawn: horizontal underside at y -805
+    # (0.75 R above its first place), x -1100..1400, irregular top up to y -1750. Presses from 75 to 105 degrees
+    # catch it at every moment of the spawn bounce. Accepted on purpose: 472 below the yellow G1-drag (1620 rule).
     'P0-roof': 'entrance roof above the spawn',
 }
 

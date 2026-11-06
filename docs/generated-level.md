@@ -1,18 +1,20 @@
 # Generated level
 
-**Hand edit on top of v23 (2026-11-06): `P0-roof`.** A green block, x -200..760,
-y -940..-400 (960 x 540), above the spawn, in fragment P0, so a first press anywhere
-between 30 and 165 degrees from the spawn catches something (v23 had nothing in
-grapple range from the spawn). It sits ~90 units above the spawn bounce apex, so
-the idle bounce is unchanged. It was added to `leveldata.js` and the reference copy
-`artifacts/levels/extended-mountain.svg` by hand, then the reference level.js/json
-were re-imported from that SVG; the generator does **not** produce it, so a
-regeneration drops it (re-add it to the SVG). `tools/check_level_geometry.py`
-lists it in `HAND_EDITS`: the reference comparison skips it and
-`check_hand_edits` holds it to its own rules (grapplable green, sides >= 540, no
-contact with other solids or zones, spawn clear). Accepted: 318 from P1 (the
-first transfer gets easier) and 1,280 below the yellow G1-drag (< 1,620). The
-layout id stays `extended-mountain-v23` (saves keep working).
+**Hand edits on top of v23 (2026-11-06, user requests).**
+- `P0-roof`: a green block above the spawn: horizontal underside at y -805 (x -1100..1400, 2,500 wide),
+  irregular top up to y -1750 (7 sides, all >= 540). It is 775 above the spawn, so presses from 75 to 105
+  degrees catch it (at every moment of the spawn bounce; wider angles are out of the 540 grapple range). The
+  idle bounce is unchanged. Accepted: 790 from P1, 472 below the yellow G1-drag (< 1,620).
+- P1 and P2 (second and third islands) moved 540 (1 grapple length) down. P0->P1 is now 285 apart (an
+  `allowedGrapplePairs` opening pair in the reference measurements), P1->P2 is unchanged (570), P2->P3 grew from
+  1,272 to 1,566. The ROUTE_PROBE grid still finds each step (new/old hits of 120: 92/77, 90/84, 64/62).
+
+They were made by hand in `artifacts/levels/extended-mountain.svg` and the reference measurements (fragments,
+transfer gaps, guides, pair gaps, yellow clearances recomputed with the checker's functions), then
+`leveldata.js` and the reference level.js/json were re-imported from that SVG. The generator does **not**
+produce them, so a regeneration drops them. `tools/check_level_geometry.py` lists the roof in `HAND_EDITS`:
+the reference comparison skips it and `check_hand_edits` holds it to its own rules (grapplable green, sides
+>= 540, no contact with other solids or zones, spawn clear). The layout id stays `extended-mountain-v23`.
 
 Layout `extended-mountain-v23` (shipped 2026-11-06) is the default generator
 output: v22 (below) plus `--green-min-side 540`, the last step, which grows
