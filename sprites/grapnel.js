@@ -168,6 +168,7 @@ class Grapnel
         this.pos = [[hit.x, hit.y, element]]
         countClimbGrapple(this.grappled)
         recordClimbCheckpoint(this.grappled, hit.x, hit.y, element)
+        TUTORIAL_HINT.caught(this.grappled, element)
         this.grappled = true
         this.clip = null
     }
@@ -329,6 +330,7 @@ class Grapnel
                 return
             countClimbGrapple(this.grappled)
             recordClimbCheckpoint(this.grappled, coords.x, coords.y, element)
+            TUTORIAL_HINT.caught(this.grappled, element)
             this.grappled = true
             if  (
                     index == 1                                                          && 

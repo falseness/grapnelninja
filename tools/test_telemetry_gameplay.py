@@ -174,11 +174,22 @@ class GameplayTelemetryTests(unittest.TestCase):
         self.freeze(page)
         page.evaluate('floors[0].doubleOfferShown = true')
 
-        # The first throw completes the tutorial step (once)
+        # A throw that catches nothing leaves the step open; the first catch on a green (bounce)
+        # obstacle completes it (once). The frozen loop leaves the player at the spawn: put them at
+        # the top of the spawn bounce (y -250), 393 under P0-roof's underside, and aim straight up
         start = self.mark(page)
+        page.mouse.move(900, 200)
+        page.mouse.down()
+        self.assertFalse(page.evaluate(AFTER)['grappled'])
+        page.mouse.up()
+        self.assertEqual(self.log(page, start), [])
+        page.evaluate('() => { ninja.y = -250; ninja.speedX = ninja.speedY = 0; screen.trackGrappleOver(true) }')
+        x, _ = page.evaluate('''() => { const r = canvas.getBoundingClientRect(), k = r.width / canvas.width
+            return [r.left + (ninja.x + screen.x) * scale[version] * k, 0] }''')
         for _ in range(2):
-            page.mouse.move(900, 200)
+            page.mouse.move(x, 10)
             page.mouse.down()
+            self.assertEqual(page.evaluate(AFTER)['target'], 'P0-roof')
             page.mouse.up()
         self.check('tutorial', page, self.log(page, start), [['D', 'tutorial:grapple:completed']])
 

@@ -53,6 +53,14 @@ const TUTORIAL_HINT = {
         ANALYTICS.design('tutorial:grapple:completed')
     },
 
+    // Grapple Over: a catch on a green (bounce) obstacle completes the step;
+    // a throw that misses or catches anything else leaves the hint up
+    caught(wasGrappled, element)
+    {
+        if (version === 'grapple_over' && !wasGrappled && element?.surfaceRole === 'bounce')
+            this.press(version)
+    },
+
     // Active game time only: the game loop calls this for simulated steps,
     // so pauses, ads, the death screen and hidden or rotated views freeze it
     advance(ms)

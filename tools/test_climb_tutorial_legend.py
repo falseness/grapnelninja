@@ -61,6 +61,9 @@ WORLD = '''() => {
         movers: w.level ? w.level.movers.length : null, byId: w.byId ? w.byId.size : null,
         grapnel: g.pos.length, throwed: g.throwed}
 }'''
+# The ninja's position in viewport CSS px (canvas rect, unrotated landscape stage)
+NINJA_VIEW = '''() => { const r = canvas.getBoundingClientRect(), k = r.width / canvas.width
+    return [r.left + (ninja.x + screen.x) * scale[version] * k, r.top + (ninja.y + screen.y) * scale[version] * k] }'''
 # Pixel colour at a sprite point (device px) from the hint sprite
 PIXEL = '''([x, y]) => Array.from(TUTORIAL_HINT.sprite.getContext('2d').getImageData(Math.round(x), Math.round(y), 1, 1).data)'''
 
@@ -277,19 +280,44 @@ class ClimbTutorialLegendTests(unittest.TestCase):
         self.assertEqual(page.evaluate('TUTORIAL_HINT.lines.length'), 6)
         page.evaluate('''() => { const draw0 = TUTORIAL_HINT.draw; window.__hintDraws = 0
             TUTORIAL_HINT.draw = function(...a) { ++__hintDraws; return draw0.apply(this, a) } }''')
-        # The first real press (mouse down / touch) throws the grapnel and starts the fade
+        # A press that catches nothing (desktop: a hold aimed up-right at ~29 degrees, under
+        # P0-roof's 45..135 band; touch: a tap, released at once) leaves the hint at full strength
         if kind == 'touch':
             page.touchscreen.tap(300, 200)
         else:
             page.mouse.move(900, 200)
             page.mouse.down()
-        self.assertTrue(page.evaluate('TUTORIAL_HINT.pressed'))
+            self.assertTrue(page.evaluate('grapnel.throwed'))
+        page.evaluate('__frames(60)')
+        if kind != 'touch':
+            page.mouse.up()
+        page.evaluate('__frames(5)')
+        self.assertEqual(page.evaluate('[TUTORIAL_HINT.pressed, grapnel.grappled]'), [False, False])
+        self.assertEqual(page.evaluate(HINT), {'visible': True, 'alpha': 1, 'done': False})
+        # A hold aimed straight up catches the green (bounce) P0-roof: only that starts the fade
+        x, y = page.evaluate(NINJA_VIEW)
+        cdp = None
+        if kind == 'touch':
+            cdp = page.context.new_cdp_session(page)
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': 10}]})
+        else:
+            page.mouse.move(x, 10)
+            page.mouse.down()
+        for _ in range(60):
+            if page.evaluate('TUTORIAL_HINT.pressed'):
+                break
+            page.evaluate('__frames(1)')
+        caught = page.evaluate('[TUTORIAL_HINT.pressed, grapnel.grappled, grapnel.pos[0]?.[2]?.surfaceRole]')
+        self.assertEqual(caught, [True, True, 'bounce'])
         page.evaluate('__frames(60)')
         mid = page.evaluate(HINT)
         self.assertTrue(mid['visible'] and 0 < mid['alpha'] < 1, mid)
         page.evaluate('__frames(100)')
-        if kind != 'touch':
+        if cdp:
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+        else:
             page.mouse.up()
+        page.evaluate('__frames(20)')
         self.assertEqual(page.evaluate(HINT), {'visible': False, 'alpha': 0, 'done': True})
         page.evaluate('window.__hintDraws = 0')
         page.evaluate('__frames(30)')
@@ -300,9 +328,9 @@ class ClimbTutorialLegendTests(unittest.TestCase):
         page.evaluate('__frames(30)')
         self.assertEqual(page.evaluate('[TUTORIAL_HINT.visible, __hintDraws]'), [False, 0])
         self.text.setdefault('lifecycle', {})[kind] = {'beforePress': {'visible': True, 'alpha': 1},
-            'after1s': mid, 'after2.67s': {'visible': False, 'alpha': 0, 'done': True},
+            'missedPress': {'visible': True, 'alpha': 1}, 'greenCatch': caught, 'after1s': mid, 'after2.67s': {'visible': False, 'alpha': 0, 'done': True},
             'hintDrawsAfterFade': 0, 'reenterGrappleOverVisible': False}
-        print(f'PASS lifecycle {kind}: shown until press, fade {mid}, hidden and not drawn after, '
+        print(f'PASS lifecycle {kind}: shown through a missed press, fade after the green catch {mid}, hidden and not drawn after, '
               'not shown again on re-entry', flush=True)
 
     def test_portrait_paused(self):

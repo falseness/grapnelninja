@@ -48,7 +48,8 @@ function createEvents()
         
         grapnel.throwed = true
         PLATFORM.startup('first_grapple', version)
-        TUTORIAL_HINT.press(version)
+        // Grapple Over: the hint stays up until the grapnel catches a green obstacle (TUTORIAL_HINT.caught)
+        if (version !== 'grapple_over') TUTORIAL_HINT.press(version)
         grapnel.setGrappled(false)   
     }
     function pickUpGrapnel()
