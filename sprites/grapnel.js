@@ -98,6 +98,7 @@ class Grapnel
     }
     endShot()
     {
+        if (version === 'grapple_over' && this.throwed && !this.grappled) EARLY_TELEMETRY.missed()
         this.throwed = this.grappled = false
         this.pos = []
         this.shotStep = null
@@ -168,6 +169,7 @@ class Grapnel
         this.pos = [[hit.x, hit.y, element]]
         countClimbGrapple(this.grappled)
         recordClimbCheckpoint(this.grappled, hit.x, hit.y, element)
+        if (!this.grappled) EARLY_TELEMETRY.caught(element)
         TUTORIAL_HINT.caught(this.grappled, element)
         this.grappled = true
         this.clip = null
@@ -330,6 +332,7 @@ class Grapnel
                 return
             countClimbGrapple(this.grappled)
             recordClimbCheckpoint(this.grappled, coords.x, coords.y, element)
+            if (!this.grappled) EARLY_TELEMETRY.caught(element)
             TUTORIAL_HINT.caught(this.grappled, element)
             this.grappled = true
             if  (

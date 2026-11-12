@@ -269,7 +269,7 @@
                     if (ended)
                         return
                     ended = true
-                    for (const step of [() => TELEMETRY.flushModeTime(), () => TELEMETRY.flushPlayTime(),
+                    for (const step of [() => EARLY_TELEMETRY.flush(), () => TELEMETRY.flushModeTime(), () => TELEMETRY.flushPlayTime(),
                         () => TELEMETRY.sendQuit(), () => TELEMETRY.sendLongestFall('session'),
                         () => TELEMETRY.sendQuitAfterLongFall(),
                         () => CLIMB_UI.abandonProgression()])
@@ -282,7 +282,12 @@
                     {
                         if (document.visibilityState !== 'hidden')
                             return TELEMETRY.shown()
-                        if (!ended && version === 'grapple_over' && runInProgress && TELEMETRY.sendHide())
+                        if (ended || version !== 'grapple_over')
+                            return
+                        // Early-game events first (buffered), then the hide events
+                        const early = EARLY_TELEMETRY.flush()
+                        const hide = runInProgress && TELEMETRY.sendHide()
+                        if (early || hide)
                             ANALYTICS.flush()
                     }
                     catch (e) {}

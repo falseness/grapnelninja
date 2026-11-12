@@ -334,13 +334,39 @@ pause. `flush()` (none.js: no-op) makes the GameAnalytics backend run the
 SDK's queued tasks and send its event store at once by `fetch(keepalive)`
 (the pagehide sender, TASK-899) WITHOUT `endSession`: no `session_end`, the
 session goes on when the tab is visible again. `pagehide` is unchanged and
-still sends `quit:*` etc. once per page. At most 3 events per hidden period,
-15 per page.
+still sends `quit:*` etc. once per page. At most 3 `hide*` events per hidden
+period, 15 per page; the buffered `early:*` events (see "Early-game
+telemetry") are handed over first, on any hidden tab in a Grapple Over page.
 
 Cost: one comparison per physics cycle
 (`TELEMETRY.falling`, from `LONG_FALL.step`) and one per frame
 (`CLIMB_UI.trackSection`). Tested by `tools/test_telemetry_gameplay.py`
 (scripted runs, exact expected sequences).
+
+### Early-game telemetry (Grapple Over)
+
+telemetry.js `EARLY_TELEMETRY`: what a new player tries in their first
+minute, so a player who leaves before the first `perf:*` / `playtime:*`
+window (60 s) still reports what they did. Only during the first 60 000 ms
+of active play of the page (the same active frames `TELEMETRY.frame`
+counts) and for at most 30 presses per page.
+
+| Id | Value | When |
+| --- | --- | --- |
+| `early:press:<outcome>:<dir>` | hold in ms, 0..60000 (0 for an ignored press) | on release (a shot), or at once (an ignored press). `<outcome>`: `green` / `yellow` / `solid` / `other` = the first element the shot caught (by `surfaceRole`: bounce / drag / solid / anything else); `recalled` = released before the shot caught anything; `range` = the shot used its full range with no catch; `ui` = the press went to a button or menu; `zone` = inside a no-grapple zone; `rotated` = a portrait phone (rotate prompt, presses ignored). `<dir>`: `n ne e se s sw w nw` from the ninja to the press, `none` when there is none |
+| `early:first_press` | active play seconds before the page's first counted press (0.1 s) | the first press |
+| `early:key:<arrow\|space\|wasd\|enter\|other>` | active play seconds (0.1 s) | the first key of each class (modifiers and repeats ignored) |
+| `early:check` | presses counted so far | at 10 s of active play |
+| `early:fps` | average fps over those 10 s, integer | right after `early:check` |
+
+**Cost.** A press or a frame only updates counters and pushes to a small
+buffer (about 1 us, `tools/test_telemetry_early.py` test_03); nothing goes to
+`ANALYTICS` inside an input handler or a frame. The buffer is handed over in
+a `requestIdleCallback` (2 s timeout; `setTimeout(0)` without it) every
+5 s of active play and when the window ends, and synchronously on a hidden
+tab (before the `hide:*` events; `ANALYTICS.flush()` then runs even when no
+`hide:*` event was due) and first thing on `pagehide`. GameAnalytics itself
+batches what it is given into one POST per send interval.
 
 ## GameAnalytics backend (itch.io, Y8)
 

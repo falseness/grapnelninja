@@ -39,6 +39,7 @@ const TELEMETRY = (() =>
             const dt = now - last
             last = now
             if (!(dt > 0)) return
+            EARLY_TELEMETRY.frame(dt)
             if (windowStart === null) windowStart = now - dt
             total += dt
             active += dt
@@ -393,3 +394,158 @@ function createFallTelemetry()
         state: () => ({longest, longFall: longFall && {...longFall}})
     }
 }
+
+// Early-game telemetry (Grapple Over): what a new player tries in their first
+// minute, so a player who leaves before any perf:* / playtime:* window still
+// reports something. Bounded: only within EARLY_WINDOW_MS of active play and
+// at most EARLY_MAX_PRESSES presses per page; ids are listed in
+// docs/platform-sdk.md ("Early-game telemetry"). Nothing is handed to
+// ANALYTICS during a press or a frame: events wait in a small buffer that is
+// flushed in an idle callback every FLUSH_MS of active play, when the window
+// ends, and synchronously on a hidden tab / pagehide (index.html), so the
+// first minute of play pays only an array push per press.
+//   early:press:<outcome>:<dir>  value: press hold in ms (0 when ignored)
+//     outcome: green | yellow | solid | other (first element the shot caught,
+//     by surfaceRole), recalled (released before the shot caught anything),
+//     range (the shot used its full range without a catch), ui (the press
+//     went to a button/menu), zone (inside a no-grapple zone), rotated
+//     (portrait phone: the game shows the rotate prompt and ignores presses)
+//     dir: n ne e se s sw w nw (from the ninja to the press), none
+//   early:first_press  value: active play seconds before the first press
+//   early:key:<arrow|space|wasd|enter|other>  once per class, value: active s
+//   early:check  at 10 s of active play, value: presses so far
+//   early:fps    at 10 s of active play, value: average fps over those 10 s
+const EARLY_TELEMETRY = (() =>
+{
+    const EARLY_WINDOW_MS = 60000, EARLY_MAX_PRESSES = 30, CHECK_MS = 10000, FLUSH_MS = 5000
+    const DIRS = ['e', 'ne', 'n', 'nw', 'w', 'sw', 's', 'se']
+    const ROLES = {bounce: 'green', drag: 'yellow', solid: 'solid'}
+    let activeMs = 0, frames = 0, presses = 0, firstSent = false, checkSent = false
+    let pending = null, nextFlushMs = FLUSH_MS, flushScheduled = false
+    const keysSent = new Set()
+    const buffer = []
+    function design(id, value)
+    {
+        buffer.push([id, value])
+        if (activeMs >= EARLY_WINDOW_MS) flushLater()
+    }
+    // Hands the buffered events to ANALYTICS in order; the count handed over
+    function flush()
+    {
+        flushScheduled = false
+        const events = buffer.splice(0)
+        for (const [id, value] of events)
+            try { ANALYTICS.design(id, value) } catch (e) {}
+        return events.length
+    }
+    function flushLater()
+    {
+        if (flushScheduled || !buffer.length) return
+        flushScheduled = true
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(flush, {timeout: 2000})
+        else setTimeout(flush, 0)
+    }
+    const on = () => version === 'grapple_over' && activeMs < EARLY_WINDOW_MS
+    const seconds = () => Math.round(activeMs / 100) / 10
+    // World y grows downwards: n is a press above the ninja
+    function dir(dx, dy)
+    {
+        if (!(Math.hypot(dx, dy) > 0)) return 'none'
+        const a = (Math.atan2(-dy, dx) * 180 / Math.PI + 360 + 22.5) % 360
+        return DIRS[Math.floor(a / 45)]
+    }
+    function counted()
+    {
+        if (!on() || presses >= EARLY_MAX_PRESSES) return false
+        presses++
+        if (!firstSent)
+        {
+            firstSent = true
+            design('early:first_press', seconds())
+        }
+        return true
+    }
+    function send(outcome, direction, holdMs)
+    {
+        design('early:press:' + outcome + ':' + direction, Math.max(0, Math.min(60000, Math.round(holdMs))))
+    }
+    return {
+        // TELEMETRY.frame, active play only
+        frame(dt)
+        {
+            if (version !== 'grapple_over' || activeMs >= EARLY_WINDOW_MS) return
+            activeMs += Math.min(dt, 1000)
+            frames++
+            if (!checkSent && activeMs >= CHECK_MS)
+            {
+                checkSent = true
+                design('early:check', presses)
+                design('early:fps', Math.round(frames * 1000 / activeMs))
+            }
+            if (activeMs >= nextFlushMs || activeMs >= EARLY_WINDOW_MS)
+            {
+                nextFlushMs = activeMs + FLUSH_MS
+                flushLater()
+            }
+        },
+        // Hidden tab / pagehide: hand everything over now; the count handed over
+        flush,
+        // A press the game did not turn into a shot: ui | zone | rotated
+        ignored(outcome, dx, dy)
+        {
+            try
+            {
+                if (counted()) send(outcome, dx === undefined ? 'none' : dir(dx, dy), 0)
+            }
+            catch (e) {}
+        },
+        // A press that threw the grapnel (dx, dy: from the ninja to the press)
+        shot(dx, dy)
+        {
+            try
+            {
+                pending = counted() ? {at: performance.now(), dir: dir(dx, dy), outcome: null} : null
+            }
+            catch (e) { pending = null }
+        },
+        // The shot's first catch (Grapnel attachAt / grapple, not yet grappled)
+        caught(element)
+        {
+            if (pending && !pending.outcome) pending.outcome = ROLES[element?.surfaceRole] || 'other'
+        },
+        // The shot ended at full range with nothing caught
+        missed()
+        {
+            if (pending && !pending.outcome) pending.outcome = 'range'
+        },
+        // The press was released (parked: the shot is out at full range)
+        released(parked)
+        {
+            if (!pending) return
+            const p = pending
+            pending = null
+            try
+            {
+                send(p.outcome || (parked ? 'range' : 'recalled'), p.dir, performance.now() - p.at)
+            }
+            catch (e) {}
+        },
+        key(key)
+        {
+            try
+            {
+                if (!on() || presses >= EARLY_MAX_PRESSES) return
+                const k = String(key)
+                if (['Shift', 'Control', 'Alt', 'Meta', 'Tab', 'CapsLock'].includes(k)) return
+                const type = k.startsWith('Arrow') ? 'arrow' : k === ' ' ? 'space' : k === 'Enter' ? 'enter' :
+                    'wasdWASD'.includes(k) && k.length === 1 ? 'wasd' : 'other'
+                if (keysSent.has(type)) return
+                keysSent.add(type)
+                design('early:key:' + type, seconds())
+            }
+            catch (e) {}
+        },
+        // For tests
+        state: () => ({activeMs, frames, presses, pending: pending && {...pending}, buffered: buffer.length})
+    }
+})()

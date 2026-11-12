@@ -31,6 +31,7 @@ function createEvents()
     {
         // Resolve the press once, before either camera axis or viewport changes.
         const target = getRealCoords(event)
+        if (version === 'grapple_over') EARLY_TELEMETRY.shot(target.x - ninja.x, target.y - ninja.y)
         if (version === 'grapple_over' && target.x === ninja.x && target.y === ninja.y)
         {
             grapnel.endShot()
@@ -85,10 +86,16 @@ function createEvents()
     {
         pressHeld = true
         if (version === 'grapple_over') gameplayPressOwned = false
-        if (adOpen || interstitialPending || isViewRotated())
+        if (adOpen || interstitialPending)
             return
+        if (isViewRotated())
+        {
+            if (version === 'grapple_over') EARLY_TELEMETRY.ignored('rotated')
+            return
+        }
         if (!unTouch && startEvent(event))
         {
+            if (version === 'grapple_over') EARLY_TELEMETRY.ignored('ui')
             //Элегантный костыль:
             unTouch = true
             setTimeout(function()
@@ -101,12 +108,18 @@ function createEvents()
         // player has left the zone while it is still held.
         if (version === 'grapple_over' && !menu.opened() && !continueOffer.visible &&
             floors[0].playerInNoGrappleZone(ninja))
+        {
             stalePress = true
+            const target = getRealCoords(event)
+            EARLY_TELEMETRY.ignored('zone', target.x - ninja.x, target.y - ninja.y)
+        }
         if (!menu.opened() && !continueOffer.visible && !stalePress)
         {
             throwGrapnel(event)
             if (version === 'grapple_over') gameplayPressOwned = true
         }
+        else if (version === 'grapple_over' && (menu.opened() || continueOffer.visible))
+            EARLY_TELEMETRY.ignored('ui')
     }
     // preventDefault stops the emulated mousedown/mouseup after a tap
     function touch(event)
@@ -132,6 +145,7 @@ function createEvents()
     }
     function offclick()
     {
+        if (version === 'grapple_over') EARLY_TELEMETRY.released(!!grapnel?.isParked?.())
         const releaseOwned = gameplayPressOwned && !stalePress && !menu.opened()
         gameplayPressOwned = false
         pressHeld = false
@@ -171,6 +185,7 @@ function createEvents()
     const pauseKeys = buildUsesEscape() ? ['Escape', 'p', 'P'] : ['p', 'P']
     document.addEventListener('keydown', function(event)
     {
+        if (version === 'grapple_over' && !event.repeat) EARLY_TELEMETRY.key(event.key)
         if (scrollKeys.includes(event.key))
             event.preventDefault()
         // The 'Go back?' dialog takes the keys; a pause key leaves it open
