@@ -215,7 +215,7 @@ agent is parsed in the page into a family name and a major version only.
 
 **Start events**, once per page, after `ANALYTICS.sessionStart()` and once
 the game language is applied (`TELEMETRY.sendEnvironment()` in boot), in
-this order (7 events):
+this order (7 events, then `env:host:*` and, for an external page, `env:top:*`):
 
 | Id | Value |
 | --- | --- |
@@ -226,6 +226,15 @@ this order (7 events):
 | `env:screen:<W>x<H>:dpr<D>` | none. `window.screen` CSS size, each side floored to a bucket: W in 0, 320, 360, 400, 480, 600, 768, 1024, 1280, 1366, 1440, 1600, 1920, 2560, 3840; H in 0, 320, 360, 480, 540, 600, 720, 768, 800, 900, 1080, 1200, 1440, 2160; D (devicePixelRatio) in 1, 1.25, 1.5, 2, 2.5, 3, 4 |
 | `env:viewport:<W>x<H>` | none. `innerWidth` x `innerHeight` (the iframe), same buckets |
 | `env:lang:<game>:<browser>` | none. Game language (`en`/`ru`), browser primary language subtag (2-3 lower-case letters); anything else -> `other` |
+
+Then where the page is shown (`classifyHost`), from `location.ancestorOrigins`
+(closest parent first; the last entry is the outermost page) or, without it,
+`document.referrer` (the direct parent's origin only):
+
+| Id | Value |
+| --- | --- |
+| `env:host:<itch_page\|itch_site\|external\|direct\|local\|unknown>` | none. `itch_page`: the outermost page is `<user>.itch.io` (the game page); `itch_site`: `itch.io` itself (e.g. its embed page opened on its own); `external`: any other site (an itch embed on someone else's page); `direct`: not in a frame (the `html.itch.zone` link opened directly); `local`: localhost; `unknown`: framed, but no ancestor or referrer |
+| `env:top:<domain>` | none. Only after `env:host:external`: the outermost page's last two host labels, `[a-z0-9.-]`, at most 32 chars (`news.ycombinator.com` -> `ycombinator.com`; `a.co.uk` -> `co.uk`) |
 
 **Per minute of active play** (frames `TELEMETRY.frame` counts as playing;
 pauses, ads, hidden tab and the rotate prompt do not count; a single frame
@@ -260,7 +269,7 @@ The total is saved under the `PROGRESS.keys` key `grapnelninja_playtime_v1`
 Playgama, localStorage elsewhere): read in the one boot `getMany`, written in
 PROGRESS's `setMany` with the other keys after every flush and on pagehide
 (TASK-873; telemetry.js never touches localStorage; unreadable storage ->
-starts at 0). Rate: 7 events at boot, at most 8 per active minute, at
+starts at 0). Rate: 8-9 events at boot, at most 8 per active minute, at
 most 4 on pagehide. Tested by `tools/test_telemetry_session.py` (scripted
 3-minute headless run plus a reload).
 

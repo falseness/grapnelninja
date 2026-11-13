@@ -11,6 +11,7 @@ Documented in docs/platform-sdk.md ("Session telemetry"):
 - pagehide: the playtime events again (after mode_time, before quit:*).
 Total play time is kept in localStorage and survives a reload.
 
+test_05: env:host / env:top from ancestor origins / referrer (classifyHost, pure).
 test_02 is a scripted ~3-minute headless run: ~96 s single, an 8 s pause,
 ~90 s double, pagehide; then a reload (the restored run keeps its mode and opens
 paused: nothing counts), unpause, ~5 s of play, pagehide.
@@ -172,7 +173,9 @@ class SessionTelemetryTests(unittest.TestCase):
         fns = [e['fn'] for e in boot]
         self.assertEqual(fns[:2], ['initialize', 'startSession'], fns)
         env = designs(boot, 'env:')
-        self.assertEqual(len(env), 7, env)
+        # The 7 classify() events, then env:host (a top-level test page: direct)
+        self.assertEqual([e['args'][0] for e in env[7:]], ['env:host:direct'], env)
+        env = env[:7]
         raw = page.evaluate('info => TELEMETRY.classify(info)', info)
         self.assertEqual([[e['args'][0], e['args'][1]] for e in env],
                          [[r[0], r[1] if len(r) > 1 else None] for r in raw])
@@ -273,7 +276,7 @@ class SessionTelemetryTests(unittest.TestCase):
         mode2 = page.evaluate('floors[0].grapnelMode')
         other = 'single' if mode2 == 'double' else 'double'
         boot2 = page.evaluate(LOG)
-        self.assertEqual(len(designs(boot2, 'env:')), 7)
+        self.assertEqual(len(designs(boot2, 'env:')), 8)
         restored = page.evaluate('TELEMETRY.playTime()')
         for mode in ('single', 'double'):
             self.assertAlmostEqual(restored['total'][mode] - restored['session'][mode], stored[mode], delta=1)
@@ -327,6 +330,29 @@ class SessionTelemetryTests(unittest.TestCase):
 
     def test_04_no_page_errors(self):
         self.assertEqual(self.errors, [])
+
+
+    def test_05_classify_host(self):
+        page = self.new_page()
+        page.goto(self.url)
+        wait_for_boot_run(page)
+        cases = [
+            ({'framed': False, 'ancestors': [], 'referrer': ''}, [['env:host:direct']]),
+            ({'framed': True, 'ancestors': ['https://falseness.itch.io'], 'referrer': ''}, [['env:host:itch_page']]),
+            ({'framed': True, 'ancestors': ['https://itch.io'], 'referrer': ''}, [['env:host:itch_site']]),
+            ({'framed': True, 'ancestors': ['https://itch.io', 'https://www.games.example.co.uk'], 'referrer': ''},
+             [['env:host:external'], ['env:top:co.uk']]),
+            ({'framed': True, 'ancestors': ['https://x.itch.io', 'https://news.ycombinator.com'], 'referrer': ''},
+             [['env:host:external'], ['env:top:ycombinator.com']]),
+            # No ancestorOrigins (Firefox before it): the referrer (direct parent origin)
+            ({'framed': True, 'ancestors': None, 'referrer': 'https://falseness.itch.io/'}, [['env:host:itch_page']]),
+            ({'framed': True, 'ancestors': None, 'referrer': ''}, [['env:host:unknown']]),
+            ({'framed': True, 'ancestors': ['http://localhost:8000'], 'referrer': ''}, [['env:host:local']]),
+        ]
+        for info, want in cases:
+            self.assertEqual(page.evaluate('info => TELEMETRY.classifyHost(info)', info), want, info)
+        ids = [r[0] for _, want in cases for r in want]
+        self.assert_clean_ids(page, ids)
 
 
 def tearDownModule():

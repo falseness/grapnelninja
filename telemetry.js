@@ -102,6 +102,7 @@ const TELEMETRY = (() =>
         fallState: () => falls.state(),
         sendEnvironment: () => session.sendEnvironment(),
         classify: info => session.classify(info),
+        classifyHost: info => session.classifyHost(info),
         flushPlayTime: () => session.flushPlayTime(),
         // PROGRESS: stored totals in, the totals to write out
         loadPlayTime: json => session.loadTotals(json),
@@ -283,6 +284,26 @@ function createSession()
                 (/^[a-z]{2,3}$/.test(browserLanguage) ? browserLanguage : 'other')]]
     }
 
+    // Where the game page is shown. info: {framed, ancestors (closest
+    // parent first; null without location.ancestorOrigins), referrer}
+    // -> [[id], ...] (pure): env:host:<itch_page|itch_site|external|direct|
+    // local|unknown>, plus env:top:<domain> (the outermost page's last two
+    // host labels) for an external page
+    function classifyHost(info)
+    {
+        if (!info.framed) return [['env:host:direct']]
+        const list = Array.isArray(info.ancestors) ? info.ancestors.filter(Boolean) : []
+        let outer = list.length ? list[list.length - 1] : String(info.referrer || '')
+        let host = ''
+        try { host = new URL(outer).hostname.toLowerCase() } catch (e) {}
+        if (!host) return [['env:host:unknown']]
+        if (['localhost', '127.0.0.1', '[::1]'].includes(host)) return [['env:host:local']]
+        if (host === 'itch.io' || host === 'www.itch.io') return [['env:host:itch_site']]
+        if (host.endsWith('.itch.io')) return [['env:host:itch_page']]
+        const domain = host.split('.').slice(-2).join('.').replace(/[^a-z0-9.-]/g, '').slice(0, 32)
+        return [['env:host:external'], ['env:top:' + (domain || 'other')]]
+    }
+
     return {
         frame(dt, grapnelMode)
         {
@@ -318,8 +339,19 @@ function createSession()
                 for (const [id, value] of events) ANALYTICS.design(id, value)
             }
             catch (e) {}
+            try
+            {
+                let framed = true
+                try { framed = window.top !== window } catch (e) {}
+                const origins = location.ancestorOrigins
+                for (const [id] of classifyHost({framed, referrer: document.referrer,
+                    ancestors: origins ? Array.from(origins) : null}))
+                    ANALYTICS.design(id)
+            }
+            catch (e) {}
         },
         classify,
+        classifyHost,
         flushPlayTime,
         loadTotals,
         savedTotals: () => savedTotals,
