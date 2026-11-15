@@ -1651,8 +1651,11 @@ const CLIMB_UI = {
     // (calcPhysics, before the spawn recovery): the run pauses, its clock
     // stopped, until Go back or Keep falling. After Keep falling it is offered
     // again GO_BACK_FALL_THRESHOLD below this point (or after a new catch).
-    offerGoBack() {
-        ANALYTICS.design('goback_offer:' + climbFallSection(), TELEMETRY.fallBucket(LONG_FALL.tracking().displacement))
+    // reason 'death': the fall reached the spawn recovery depth (physics.js),
+    // reported as goback_offer_death:<section>.
+    offerGoBack(reason) {
+        ANALYTICS.design((reason === 'death' ? 'goback_offer_death:' : 'goback_offer:') + climbFallSection(),
+            TELEMETRY.fallBucket(LONG_FALL.tracking().displacement))
         LONG_FALL.goBackOffered()
         this.goingBack = true
         this.goBackWorld = floors[0]

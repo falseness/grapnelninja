@@ -4,6 +4,9 @@ const GRAVITY = screenHeightPercent(GAMEPLAY.gravityHeightPercent) / Math.pow(cy
 // Grapple Over: falling strictly below this many world units under the spawn
 // returns the player to the spawn without restarting the run.
 const CLIMB_FALL_RECOVERY_DEPTH = 1500
+// Grapple Over: a death offers 'Go back?' only to a checkpoint at least this
+// high above the spawn (lower ones are about where the spawn launch reaches)
+const CLIMB_DEATH_GO_BACK_MIN_HEIGHT = 1000
 // Grapple Over: a fresh start (first run or restart) launches the ninja
 // upward from the spawn so its no-input free-flight apex is this high.
 const SPAWN_LAUNCH_RISE = 270
@@ -113,6 +116,16 @@ function calcPhysics()
         }
         if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)
         {
+            // A death (the fall below the spawn) with a checkpoint at least
+            // CLIMB_DEATH_GO_BACK_MIN_HEIGHT up offers 'Go back?' first, unless
+            // this fall already offered it; Keep falling lands here again and
+            // recovers at the spawn.
+            if (checkpoint && world.level.spawn.y - checkpoint.anchorY >= CLIMB_DEATH_GO_BACK_MIN_HEIGHT &&
+                !LONG_FALL.goBackOfferedInFall)
+            {
+                CLIMB_UI.offerGoBack('death')
+                return true
+            }
             recoverClimbFall()
             return true
         }

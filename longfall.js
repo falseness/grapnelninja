@@ -27,6 +27,9 @@ const LONG_FALL = (function()
     // The go-back offer measures from here: the fall start (startY) until an
     // offer is made, then the player's y at that offer
     let goBackFromY = 0
+    // 'Go back?' was offered in this fall (reset by a catch, a rise or a
+    // tracking restart): a death in the same fall does not ask again
+    let goBackOfferedInFall = false
 
     function pick(r)
     {
@@ -38,6 +41,7 @@ const LONG_FALL = (function()
     {
         startY = lastY = goBackFromY = ninja.y
         armed = true
+        goBackOfferedInFall = false
         wasGrappled = grapnel.isGrappled()
     }
     return {
@@ -61,6 +65,7 @@ const LONG_FALL = (function()
             {
                 startY = goBackFromY = y
                 armed = true
+                goBackOfferedInFall = false
             }
             else if (armed && y - startY > LONG_FALL_THRESHOLD)
             {
@@ -93,6 +98,7 @@ const LONG_FALL = (function()
         goBackOffered()
         {
             goBackFromY = ninja.y
+            goBackOfferedInFall = true
         },
         clearEvent()
         {
@@ -102,6 +108,7 @@ const LONG_FALL = (function()
         get event() { return floors[0] === world && ninja === body ? event : null },
         get emitted() { return emitted },
         get goBackFromY() { return goBackFromY },
+        get goBackOfferedInFall() { return goBackOfferedInFall },
         tracking()
         {
             return {startY, lastY, armed, wasGrappled, displacement: lastY - startY}

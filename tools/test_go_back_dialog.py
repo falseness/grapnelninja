@@ -167,7 +167,7 @@ class GoBackDialogTests(unittest.TestCase):
         page.evaluate(START, height)
         return page.evaluate(FALL, [2000, None])
 
-    def high_checkpoint(self, page, height=60000):
+    def high_checkpoint(self, page, height=60000, minimum=21500):
         """TASK-853: the first static candidate more than `height` above the
         spawn that the real throw catches becomes the checkpoint, so falls of
         more than 2 x 10000 under it end long before the spawn recovery."""
@@ -177,7 +177,7 @@ class GoBackDialogTests(unittest.TestCase):
                 continue
             row = self.catch(page, target)
             if row['grappled'] and row['target'] == target['id'] and row['checkpoint']:
-                self.assertGreater(spawn - row['checkpoint']['anchorY'], 21500)
+                self.assertGreater(spawn - row['checkpoint']['anchorY'], minimum)
                 return row['checkpoint'], spawn
         self.fail('no catchable high checkpoint')
 
@@ -497,6 +497,53 @@ class GoBackDialogTests(unittest.TestCase):
         self.assertGreater(below['maxBelow'], THRESHOLD)
         self.evidence['i_checkpoint_not_above'] = {'checkpoint': cp, 'start_y': start_y, 'above_11000': above,
                                                    'opened': opened, 'checkpoint_below_after_keep': below}
+
+    def test_12_death_offers_go_back(self):
+        """A fall too short for the long-fall offer that reaches the spawn
+        recovery depth (a death) opens 'Go back?' first when the checkpoint is
+        at least 1000 above the spawn (goback_offer_death:<section>); Keep
+        falling then recovers at the spawn without asking again, Go back hangs
+        at the checkpoint. A checkpoint lower than 1000 recovers at once."""
+        page = self.open()
+        cp, spawn = self.high_checkpoint(page, height=1000, minimum=1000)
+        cp_height = spawn - cp['anchorY']
+        log_from = page.evaluate('ANALYTICS.debugLog.length')
+        # From 1000 above the spawn: about 2500 down to the recovery depth
+        page.evaluate(START, 1000)
+        died = page.evaluate(FALL, [4000, None])
+        self.assertTrue(died['dialog'] and died['paused'] and died['open'])
+        self.assertLess(died['height'], -DEPTH)
+        self.assertLess(died['displacement'], 4200)
+        self.assertEqual(died['recoveries'], 0)
+        ids = page.evaluate('''from => ANALYTICS.debugLog.slice(from).filter(e => e.fn === 'addDesignEvent')
+            .map(e => e.args[0]).filter(i => i.startsWith('goback'))''', log_from)
+        self.assertEqual(len(ids), 1, ids)
+        self.assertTrue(ids[0].startswith('goback_offer_death:'), ids)
+        # Keep falling: the next tick recovers at the spawn, no second dialog
+        self.keep_falling(page)
+        kept = page.evaluate('() => { physics(); return STATE() }')
+        self.assertFalse(kept['paused'] and kept['dialog'])
+        self.assertEqual(kept['recoveries'], 1)
+        self.assertEqual(kept['ninja'][0], kept['spawn'][0])
+        # Another death: Go back (focused first) hangs under the checkpoint
+        page.evaluate('() => { if (menu.gamePaused) menu.unPause() }')
+        page.evaluate(START, 1000)
+        again = page.evaluate(FALL, [4000, None])
+        self.assertTrue(again['dialog'])
+        page.keyboard.press('Enter')
+        back = page.evaluate('() => { for (let i = 0; i < 30; i++) physics(); return STATE() }')
+        self.assertFalse(back['dialog'])
+        self.assertEqual(back['recoveries'], 1)
+        self.assertEqual(back['goBacks'], 1)
+        self.assertEqual(back['grapnel']['anchor'], [cp['anchorX'], cp['anchorY']])
+        # A checkpoint under 1000 above the spawn: the death recovers at once
+        page.evaluate('y => { floors[0].climbCheckpoint = {...floors[0].climbCheckpoint, anchorY: y} }', spawn - 900)
+        page.evaluate(START, 1000)
+        low = page.evaluate(FALL, [4000, None])
+        self.assertFalse(low['paused'] or low['dialog'])
+        self.assertEqual(low['recoveries'], 2)
+        self.evidence['l_death_offer'] = {'checkpoint': cp, 'checkpoint_height': cp_height, 'died': died,
+                                          'events': ids, 'keep_falling': kept, 'go_back': back, 'low': low}
 
     def test_08_screenshots(self):
         shots = {}
