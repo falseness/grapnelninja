@@ -109,6 +109,7 @@ function calcPhysics()
         // falling earlier in the fall); Keep falling then recovers at the spawn.
         const checkpoint = world.climbCheckpoint
         const dead = stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH
+        if (dead) LONG_FALL.died()
         if (checkpoint && checkpoint.anchorY < ninja.y &&
             (dead ? !LONG_FALL.deathGoBackOffered : LONG_FALL.goBackDue()))
         {

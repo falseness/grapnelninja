@@ -37,6 +37,18 @@ const LONG_FALL = (function()
         const index = Math.min(n - 1, Math.max(0, Math.floor(r * n) || 0))
         return {index, message: LONG_FALL_MESSAGES[index]}
     }
+    // The reaction of this fall: the run's first one is the double grapnel
+    // hint (single mode), the others a random phrase. Once per fall (armed).
+    function emit(y)
+    {
+        armed = false
+        // world.fallHintShown is saved with the climb
+        const first = !world.fallHintShown
+        world.fallHintShown = true
+        event = first && world.grapnelMode !== 'double'
+            ? {id: ++emitted, index: -1, hint: true, message: I18N.t(LONG_FALL_HINT_KEY), displacement: y - startY}
+            : {id: ++emitted, ...pick(random()), displacement: y - startY}
+    }
     function baseline()
     {
         startY = lastY = goBackFromY = ninja.y
@@ -67,18 +79,16 @@ const LONG_FALL = (function()
                 armed = true
             }
             else if (armed && y - startY > LONG_FALL_THRESHOLD)
-            {
-                armed = false
-                // The run's first long fall; world.fallHintShown is saved with the climb.
-                const first = !world.fallHintShown
-                world.fallHintShown = true
-                event = first && world.grapnelMode !== 'double'
-                    ? {id: ++emitted, index: -1, hint: true, message: I18N.t(LONG_FALL_HINT_KEY), displacement: y - startY}
-                    : {id: ++emitted, ...pick(random()), displacement: y - startY}
-            }
+                emit(y)
             lastY = y
             // Gameplay telemetry: the session's longest fall, the last long one
             TELEMETRY.falling(y - startY)
+        },
+        // A death (the fall reached the spawn recovery depth, physics.js): the
+        // fall's reaction when it has none yet, however short the fall
+        died()
+        {
+            if (armed && floors[0] === world && ninja === body) emit(ninja.y)
         },
         // Recovery or go-back teleport: restart tracking at the new position,
         // keep the reaction.

@@ -396,15 +396,16 @@ class LongFallMessageTests(unittest.TestCase):
         self.assertIsNotNone(cases['crossesBoth']['eventBeforeTeleport'])
         self.assertIsNotNone(cases['crossesBoth']['eventAfter'])
         self.assertGreater(cases['crossesBoth']['displacementAtRecovery'], THRESHOLD)
-        self.assertEqual(cases['belowThreshold']['emitted'], 0)
+        # A death below the 4000 threshold still shows its reaction (LONG_FALL.died)
+        self.assertEqual(cases['belowThreshold']['emitted'], 1)
         self.assertLessEqual(cases['belowThreshold']['displacementAtRecovery'], THRESHOLD)
-        self.assertIsNone(cases['belowThreshold']['eventAfter'])
+        self.assertIsNotNone(cases['belowThreshold']['eventAfter'])
         for c in cases.values():
             self.assertEqual(c['trackingAfter']['displacement'], 0)
             self.assertEqual(c['trackingAfter']['startY'], spawn['y'])
         lc['sameStepRecovery'] = cases
-        # Short falls from the spawn recover repeatedly; the 1500-unit upward teleport
-        # and the next fall never add up to an event.
+        # Short falls from the spawn recover repeatedly: each death shows one
+        # reaction; the upward teleport and the next fall never add a second.
         page.evaluate('() => { LONG_FALL.clearEvent(); RECOVERIES.length = 0 }')
         n = page.evaluate('LONG_FALL.emitted')
         repeats = []
@@ -414,9 +415,9 @@ class LongFallMessageTests(unittest.TestCase):
             r = page.evaluate(RUN, [400, 'recovery'])
             repeats.append({'steps': len(r['steps']), 'maxDisplacement': max(s['d'] for s in r['steps'])})
         self.assertEqual(page.evaluate('RECOVERED + RECOVERIES.length'), 4)
-        self.assertEqual(page.evaluate('LONG_FALL.emitted'), n)
+        self.assertEqual(page.evaluate('LONG_FALL.emitted'), n + 4)
         self.assertTrue(all(r['maxDisplacement'] < THRESHOLD for r in repeats))
-        lc['repeatedShortRecoveries'] = {'recoveries': 4, 'events': 0, 'falls': repeats}
+        lc['repeatedShortRecoveries'] = {'recoveries': 4, 'events': 4, 'falls': repeats}
         lc['pageErrorsRecovery'] = page.errors
         self.assertEqual(page.errors, [])
 

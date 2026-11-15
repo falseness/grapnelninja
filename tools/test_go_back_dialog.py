@@ -523,6 +523,10 @@ class GoBackDialogTests(unittest.TestCase):
         self.assertLess(died['height'], -DEPTH)
         self.assertLess(died['displacement'], 4200)
         self.assertEqual(died['recoveries'], 0)
+        # The death shows the fall reaction however short the fall: the run's
+        # first is the double grapnel hint
+        first_msg = page.evaluate('() => LONG_FALL.event && {hint: !!LONG_FALL.event.hint, text: LONG_FALL.text(LONG_FALL.event)}')
+        self.assertEqual(first_msg, {'hint': True, 'text': 'Maybe you should try double grapnel mode'})
         ids = page.evaluate(goback, log_from)
         self.assertEqual(len(ids), 1, ids)
         self.assertTrue(ids[0].startswith('goback_offer_death:'), ids)
@@ -535,8 +539,12 @@ class GoBackDialogTests(unittest.TestCase):
         page.evaluate('() => { if (menu.gamePaused) menu.unPause() }')
         # Another death: Go back (focused first) hangs under the checkpoint
         page.evaluate(START, 1000)
+        emitted = page.evaluate('LONG_FALL.emitted')
         again = page.evaluate(FALL, [4000, None])
         self.assertTrue(again['dialog'])
+        # Later deaths: a random phrase, one per death
+        second_msg = page.evaluate('() => ({hint: !!LONG_FALL.event.hint, emitted: LONG_FALL.emitted})')
+        self.assertEqual(second_msg, {'hint': False, 'emitted': emitted + 1})
         page.keyboard.press('Enter')
         back = page.evaluate('() => { for (let i = 0; i < 30; i++) physics(); return STATE() }')
         self.assertFalse(back['dialog'])
@@ -569,7 +577,8 @@ class GoBackDialogTests(unittest.TestCase):
         self.assertEqual(low['recoveries'], 2)
         self.evidence['l_death_offer'] = {'checkpoint': cp, 'checkpoint_height': spawn - cp['anchorY'], 'died': died,
                                           'events': ids, 'keep_falling': kept, 'go_back': back,
-                                          'long_then_death': ids2, 'low': low}
+                                          'long_then_death': ids2, 'low': low, 'first_msg': first_msg,
+                                          'second_msg': second_msg}
 
     def test_08_screenshots(self):
         shots = {}
