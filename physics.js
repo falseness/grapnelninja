@@ -4,9 +4,6 @@ const GRAVITY = screenHeightPercent(GAMEPLAY.gravityHeightPercent) / Math.pow(cy
 // Grapple Over: falling strictly below this many world units under the spawn
 // returns the player to the spawn without restarting the run.
 const CLIMB_FALL_RECOVERY_DEPTH = 1500
-// Grapple Over: a death offers 'Go back?' only to a checkpoint at least this
-// high above the spawn (lower ones are about where the spawn launch reaches)
-const CLIMB_DEATH_GO_BACK_MIN_HEIGHT = 1000
 // Grapple Over: a fresh start (first run or restart) launches the ninja
 // upward from the spawn so its no-input free-flight apex is this high.
 const SPAWN_LAUNCH_RISE = 270
@@ -106,26 +103,20 @@ function calcPhysics()
         stats.maxHeight = Math.max(stats.maxHeight, stats.currentHeight)
         reportClimbHeight(stats)
         LONG_FALL.step()
-        // Before the spawn recovery: a fall long enough for both pauses on the
-        // 'Go back?' dialog first (the recovery follows if the player keeps falling).
+        // Before the spawn recovery: a long fall, or a death (the fall below
+        // the spawn recovery depth), with the checkpoint above the player pauses
+        // on the 'Go back?' dialog. A death always asks once (even after Keep
+        // falling earlier in the fall); Keep falling then recovers at the spawn.
         const checkpoint = world.climbCheckpoint
-        if (checkpoint && checkpoint.anchorY < ninja.y && LONG_FALL.goBackDue())
+        const dead = stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH
+        if (checkpoint && checkpoint.anchorY < ninja.y &&
+            (dead ? !LONG_FALL.deathGoBackOffered : LONG_FALL.goBackDue()))
         {
-            CLIMB_UI.offerGoBack()
+            CLIMB_UI.offerGoBack(dead ? 'death' : undefined)
             return true
         }
-        if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)
+        if (dead)
         {
-            // A death (the fall below the spawn) with a checkpoint at least
-            // CLIMB_DEATH_GO_BACK_MIN_HEIGHT up offers 'Go back?' first, unless
-            // this fall already offered it; Keep falling lands here again and
-            // recovers at the spawn.
-            if (checkpoint && world.level.spawn.y - checkpoint.anchorY >= CLIMB_DEATH_GO_BACK_MIN_HEIGHT &&
-                !LONG_FALL.goBackOfferedInFall)
-            {
-                CLIMB_UI.offerGoBack('death')
-                return true
-            }
             recoverClimbFall()
             return true
         }

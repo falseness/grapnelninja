@@ -1656,7 +1656,7 @@ const CLIMB_UI = {
     offerGoBack(reason) {
         ANALYTICS.design((reason === 'death' ? 'goback_offer_death:' : 'goback_offer:') + climbFallSection(),
             TELEMETRY.fallBucket(LONG_FALL.tracking().displacement))
-        LONG_FALL.goBackOffered()
+        LONG_FALL.goBackOffered(reason)
         this.goingBack = true
         this.goBackWorld = floors[0]
         this.goBackFocus = 0

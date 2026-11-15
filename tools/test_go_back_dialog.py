@@ -167,7 +167,7 @@ class GoBackDialogTests(unittest.TestCase):
         page.evaluate(START, height)
         return page.evaluate(FALL, [2000, None])
 
-    def high_checkpoint(self, page, height=60000, minimum=21500):
+    def high_checkpoint(self, page, height=60000):
         """TASK-853: the first static candidate more than `height` above the
         spawn that the real throw catches becomes the checkpoint, so falls of
         more than 2 x 10000 under it end long before the spawn recovery."""
@@ -177,7 +177,7 @@ class GoBackDialogTests(unittest.TestCase):
                 continue
             row = self.catch(page, target)
             if row['grappled'] and row['target'] == target['id'] and row['checkpoint']:
-                self.assertGreater(spawn - row['checkpoint']['anchorY'], minimum)
+                self.assertGreater(spawn - row['checkpoint']['anchorY'], 21500)
                 return row['checkpoint'], spawn
         self.fail('no catchable high checkpoint')
 
@@ -290,14 +290,20 @@ class GoBackDialogTests(unittest.TestCase):
         resumed = page.evaluate('() => { physics(); return STATE() }')
         page.mouse.up()
         released = page.evaluate('() => STATE()')
-        # Keeps falling to the spawn recovery without a second dialog
-        down = page.evaluate(FALL, [2000, None])
+        # Keeps falling to the death: no second long-fall dialog, the death one
+        # opens (test_12); its Keep falling recovers at the spawn
+        dead = page.evaluate(FALL, [2000, None])
+        self.assertTrue(dead['dialog'])
+        self.assertLess(dead['height'], -DEPTH)
+        self.assertEqual(dead['recoveries'], 0)
+        self.keep_falling(page)
+        down = page.evaluate('() => { physics(); return STATE() }')
         # Keep falling measures the next offer from the dialog point (TASK-853);
         # the spawn recovery comes first here (3500 below it) and restarts it
         self.assertFalse(resumed['paused'] or resumed['dialog'])
         self.assertGreater(resumed['ninja'][1], opened['ninja'][1])
         self.assertEqual(resumed['goBackFromY'], opened['ninja'][1])
-        self.assertFalse(down['paused'] or down['dialog'])
+        self.assertFalse(down['dialog'])
         self.assertEqual(down['recoveries'], 1)
         self.assertLess(down['ninja'][1] - opened['ninja'][1], THRESHOLD)
         self.assertLessEqual(down['goBackFromY'], down['spawn'][1])
@@ -499,34 +505,35 @@ class GoBackDialogTests(unittest.TestCase):
                                                    'opened': opened, 'checkpoint_below_after_keep': below}
 
     def test_12_death_offers_go_back(self):
-        """A fall too short for the long-fall offer that reaches the spawn
-        recovery depth (a death) opens 'Go back?' first when the checkpoint is
-        at least 1000 above the spawn (goback_offer_death:<section>); Keep
-        falling then recovers at the spawn without asking again, Go back hangs
-        at the checkpoint. A checkpoint lower than 1000 recovers at once."""
+        '''A death (the fall reaches the spawn recovery depth) with a checkpoint
+        always opens 'Go back?' first (goback_offer_death:<section>), at any
+        checkpoint height and also after Keep falling on a long-fall offer in
+        the same fall; Keep falling on it recovers at the spawn, Go back hangs
+        at the checkpoint.'''
         page = self.open()
-        cp, spawn = self.high_checkpoint(page, height=1000, minimum=1000)
-        cp_height = spawn - cp['anchorY']
+        cp = self.checkpoint(page)
+        spawn = page.evaluate('floors[0].level.spawn.y')
         log_from = page.evaluate('ANALYTICS.debugLog.length')
-        # From 1000 above the spawn: about 2500 down to the recovery depth
+        goback = ("from => ANALYTICS.debugLog.slice(from).filter(e => e.fn === 'addDesignEvent')"
+                  ".map(e => e.args[0]).filter(i => i.startsWith('goback'))")
+        # A short fall (no long-fall offer) down to the recovery depth
         page.evaluate(START, 1000)
         died = page.evaluate(FALL, [4000, None])
         self.assertTrue(died['dialog'] and died['paused'] and died['open'])
         self.assertLess(died['height'], -DEPTH)
         self.assertLess(died['displacement'], 4200)
         self.assertEqual(died['recoveries'], 0)
-        ids = page.evaluate('''from => ANALYTICS.debugLog.slice(from).filter(e => e.fn === 'addDesignEvent')
-            .map(e => e.args[0]).filter(i => i.startsWith('goback'))''', log_from)
+        ids = page.evaluate(goback, log_from)
         self.assertEqual(len(ids), 1, ids)
         self.assertTrue(ids[0].startswith('goback_offer_death:'), ids)
         # Keep falling: the next tick recovers at the spawn, no second dialog
         self.keep_falling(page)
         kept = page.evaluate('() => { physics(); return STATE() }')
-        self.assertFalse(kept['paused'] and kept['dialog'])
+        self.assertFalse(kept['dialog'])
         self.assertEqual(kept['recoveries'], 1)
         self.assertEqual(kept['ninja'][0], kept['spawn'][0])
-        # Another death: Go back (focused first) hangs under the checkpoint
         page.evaluate('() => { if (menu.gamePaused) menu.unPause() }')
+        # Another death: Go back (focused first) hangs under the checkpoint
         page.evaluate(START, 1000)
         again = page.evaluate(FALL, [4000, None])
         self.assertTrue(again['dialog'])
@@ -536,14 +543,33 @@ class GoBackDialogTests(unittest.TestCase):
         self.assertEqual(back['recoveries'], 1)
         self.assertEqual(back['goBacks'], 1)
         self.assertEqual(back['grapnel']['anchor'], [cp['anchorX'], cp['anchorY']])
-        # A checkpoint under 1000 above the spawn: the death recovers at once
-        page.evaluate('y => { floors[0].climbCheckpoint = {...floors[0].climbCheckpoint, anchorY: y} }', spawn - 900)
+        # A long fall: its offer, Keep falling, then the death asks again
+        log2 = page.evaluate('ANALYTICS.debugLog.length')
+        page.evaluate(START, 4000)
+        long_offer = page.evaluate(FALL, [4000, None])
+        self.assertTrue(long_offer['dialog'])
+        self.assertGreater(long_offer['height'], -DEPTH)
+        self.keep_falling(page)
+        death_after_keep = page.evaluate(FALL, [4000, None])
+        self.assertTrue(death_after_keep['dialog'])
+        self.assertLess(death_after_keep['height'], -DEPTH)
+        self.assertEqual(death_after_keep['recoveries'], 1)
+        self.keep_falling(page)
+        recovered = page.evaluate('() => { physics(); return STATE() }')
+        self.assertEqual(recovered['recoveries'], 2)
+        ids2 = page.evaluate(goback, log2)
+        self.assertEqual([i.split(':')[0] for i in ids2],
+                         ['goback_offer', 'goback_choice', 'goback_offer_death', 'goback_choice'], ids2)
+        # A checkpoint just above the spawn still asks on a death
+        page.evaluate('() => { if (menu.gamePaused) menu.unPause() }')
+        page.evaluate('y => { floors[0].climbCheckpoint = {...floors[0].climbCheckpoint, anchorY: y} }', spawn - 100)
         page.evaluate(START, 1000)
         low = page.evaluate(FALL, [4000, None])
-        self.assertFalse(low['paused'] or low['dialog'])
+        self.assertTrue(low['dialog'])
         self.assertEqual(low['recoveries'], 2)
-        self.evidence['l_death_offer'] = {'checkpoint': cp, 'checkpoint_height': cp_height, 'died': died,
-                                          'events': ids, 'keep_falling': kept, 'go_back': back, 'low': low}
+        self.evidence['l_death_offer'] = {'checkpoint': cp, 'checkpoint_height': spawn - cp['anchorY'], 'died': died,
+                                          'events': ids, 'keep_falling': kept, 'go_back': back,
+                                          'long_then_death': ids2, 'low': low}
 
     def test_08_screenshots(self):
         shots = {}

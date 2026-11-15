@@ -315,7 +315,7 @@ recovery, with its section), `restart:<mode>` (restarts), `goback:<sectionId>`
 | `hide_long_fall:<sectionId>` | fall bucket of that fall | the tab goes hidden within 30 s (wall clock) after the last moment of a fall longer than `LONG_FALL_THRESHOLD`, with that fall's section |
 | `longest_fall:hide` | fall bucket of the session's longest single fall so far | the tab goes hidden, after `hide:*` / `hide_long_fall:*`; nothing if the player never fell |
 | `goback_offer:<sectionId>` | fall bucket when offered (10000, 20000, ...) | the 'Go back?' dialog opens (every offer, again after Keep falling) |
-| `goback_offer_death:<sectionId>` | fall bucket when offered | the 'Go back?' dialog opens on a death (the fall reaches the spawn recovery depth, 1500 under the spawn) with a checkpoint at least 1000 above the spawn and no offer earlier in that fall; Keep falling recovers at the spawn |
+| `goback_offer_death:<sectionId>` | fall bucket when offered | the 'Go back?' dialog opens on a death (the fall reaches the spawn recovery depth, 1500 under the spawn) with the checkpoint above the player, once per death (also after Keep falling earlier in that fall); Keep falling recovers at the spawn |
 | `goback_choice:keep:<sectionId>` | none | Keep falling (button, Escape, or a rewarded ad answering `closed`) |
 | `goback_choice:back:<sectionId>` | none | Go back pressed |
 | `goback_ad:<result>` | none | the go-back rewarded ad's answer: `rewarded`, `closed`, `failed`, `unavailable`, `skipped`, `timeout` (no answer within 30 s), `other`; `unsupported` when the build has no rewarded ads (the player goes back for free). `ad('reward_received' \| 'show' \| 'failed_show', 'rewarded', 'go_back')` still comes from PLATFORM |
